@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Download, CheckCircle2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 import PriorityIndicator from '../components/PriorityIndicator';
 import StageBadge from '../components/StageBadge';
 import Button from '../components/Button';
+import EmptyState from '../components/EmptyState';
+import { SkeletonTable } from '../components/Skeleton';
 import { protocol, processStatusLabels } from '../mocks/data';
-import type { FindingStatus } from '../types';
+import type { FindingStatus, ReviewPriority } from '../types';
 
 interface Props {
   protocolId: string;
@@ -36,23 +38,32 @@ const TABS: TabDef[] = [
     statuses: ['SUSPICION'] }
 ];
 
-export default function ProtocolScreen({ protocolId, onBack, onOpenVerification, onOpenHypotheses }: Props) {
+export default function ProtocolScreen({
+  protocolId, onBack, onOpenVerification, onOpenHypotheses
+}: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>('candidates');
+  const [loading, setLoading] = useState(true);
+  const [priorityFilter, setPriorityFilter] = useState<'ALL' | ReviewPriority>('ALL');
 
-  const counts = useMemo(() => {
-    const map: Record<TabKey, number> = {
-      completeness: 19, candidates: 14, confirmed: 3, verified: 96, hypotheses: 5
-    };
-    return map;
+  useEffect(() => {
+    const t = window.setTimeout(() => setLoading(false), 500);
+    return () => window.clearTimeout(t);
   }, []);
+
+  const counts = useMemo<Record<TabKey, number>>(() => ({
+    completeness: 19, candidates: 14, confirmed: 3, verified: 96, hypotheses: 5
+  }), []);
 
   const rows = useMemo(() => {
     const tab = TABS.find((t) => t.key === activeTab)!;
-    return protocol.findings.filter((f) => tab.statuses.includes(f.status));
-  }, [activeTab]);
+    let list = protocol.findings.filter((f) => tab.statuses.includes(f.status));
+    if (priorityFilter !== 'ALL') {
+      list = list.filter((f) => f.priority === priorityFilter);
+    }
+    return list;
+  }, [activeTab, priorityFilter]);
 
   const candidatesCount = protocol.findings.filter((f) => f.status === 'CANDIDATE').length;
-  const confirmedCount  = protocol.findings.filter((f) => f.status === 'CONFIRMED_VIOLATION').length;
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-[#F5F7FA]">
@@ -80,7 +91,7 @@ export default function ProtocolScreen({ protocolId, onBack, onOpenVerification,
       />
 
       <div className="flex-1 overflow-auto px-8 py-5">
-        {/* Технические версии — моно, бледно */}
+        {/* Технические версии */}
         <div className="mono text-[11px] text-[#94A3B8] mb-3">
           matrix_version {protocol.matrixVersion} · model_version {protocol.modelVersion} ·
           dataset_version {protocol.datasetVersion} · hash {protocol.hash.slice(0, 12)}…
@@ -135,7 +146,7 @@ export default function ProtocolScreen({ protocolId, onBack, onOpenVerification,
               <button
                 key={t.key}
                 type="button"
-                onClick={() => setActiveTab(t.key)}
+                onClick={() => { setActiveTab(t.key); setPriorityFilter('ALL'); }}
                 className={[
                   'px-3 h-9 text-[13px] rounded-t-md transition-colors flex items-center gap-2',
                   isActive
@@ -155,78 +166,109 @@ export default function ProtocolScreen({ protocolId, onBack, onOpenVerification,
           })}
         </div>
 
-        {/* Таблица */}
-                {activeTab === 'hypotheses' && (
+        {/* Фильтры над таблицей */}
+        <div className="flex items-center gap-3 mb-3">
+          <select
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value as 'ALL' | ReviewPriority)}
+            className="h-9 px-3 border border-[#CBD5E1] rounded-md bg-white text-[13px] text-[#475569] outline-none focus:border-[#1B4E9B]"
+          >
+            <option value="ALL">Приоритет: все</option>
+            <option value="HIGH">HIGH</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="LOW">LOW</option>
+          </select>
+          {priorityFilter !== 'ALL' && (
+            <button
+              type="button"
+              onClick={() => setPriorityFilter('ALL')}
+              className="text-[12px] text-[#1B4E9B] hover:underline"
+            >
+              Сбросить фильтр
+            </button>
+          )}
+        </div>
+
+        {/* Плашка вкладки гипотез */}
+        {activeTab === 'hypotheses' && !loading && rows.length > 0 && (
           <div className="mb-3 flex items-center justify-between bg-[#EDF1F7] border border-[#E2E8F0] rounded-lg px-4 py-2.5">
             <span className="text-[13px] text-[#475569]">
-              Гипотезы свободного поиска не входят в число нарушений и не используются для обучения модели.
+              Гипотезы не входят в число нарушений и не используются для обучения модели.
             </span>
-            <Button
-              variant="primary"
-              onClick={() => onOpenHypotheses(protocolId)}
-            >
+            <Button variant="primary" onClick={() => onOpenHypotheses(protocolId)}>
               Открыть полный список
             </Button>
           </div>
         )}
 
-        <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden">
-          <table className="w-full text-[13px] border-collapse">
-            <thead>
-              <tr className="bg-[#EDF1F7] text-[#475569] text-[12px]">
-                <th className="text-left font-medium px-3 h-10 w-[80px]">Код</th>
-                <th className="text-left font-medium px-3 h-10 w-[60px]">Раздел</th>
-                <th className="text-left font-medium px-3 h-10">Наименование параметра</th>
-                <th className="text-right font-medium px-3 h-10 w-[120px]">Ожидается</th>
-                <th className="text-right font-medium px-3 h-10 w-[120px]">Фактически</th>
-                <th className="text-right font-medium px-3 h-10 w-[100px]">Δ</th>
-                <th className="text-left font-medium px-3 h-10 w-[110px]">Источники</th>
-                <th className="text-left font-medium px-3 h-10 w-[110px]">Приоритет</th>
-                <th className="text-left font-medium px-3 h-10 w-[180px]">Статус</th>
-                <th className="text-right font-medium px-3 h-10 w-[110px]" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((f) => (
-                <tr key={f.id} className="h-10 border-t border-[#E2E8F0] hover:bg-[#E8F0FB]">
-                  <td className="px-3 mono text-[#0F172A]">{f.code}</td>
-                  <td className="px-3 text-[#475569]">{f.section}</td>
-                  <td className="px-3 text-[#0F172A] truncate">{f.title}</td>
-                  <td className="px-3 text-right num text-[#0F172A]">{f.expected}</td>
-                  <td className="px-3 text-right num text-[#0F172A]">{f.actual}</td>
-                  <td className="px-3 text-right num text-[#475569]">{f.delta}</td>
-                  <td className="px-3">
-                    <div className="flex items-center gap-1">
-                      <StageBadge stage="PD" active={f.sources.includes('PD')} />
-                      <StageBadge stage="RD" active={f.sources.includes('RD')} />
-                      <StageBadge stage="ID" active={f.sources.includes('ID')} />
-                    </div>
-                  </td>
-                  <td className="px-3"><PriorityIndicator priority={f.priority} /></td>
-                  <td className="px-3"><StatusBadge status={f.status} /></td>
-                  <td className="px-3 text-right">
-                    {f.status === 'CANDIDATE' && (
-                      <Button
-                        variant="primary"
-                        onClick={() => onOpenVerification(protocolId)}
-                      >
-                        Проверить
-                      </Button>
-                    )}
-                  </td>
+        {/* Таблица / скелетон / пустое состояние */}
+        {loading ? (
+          <SkeletonTable rows={8} />
+        ) : rows.length === 0 ? (
+          <div className="bg-white border border-[#E2E8F0] rounded-lg">
+            <EmptyState
+              kind={priorityFilter !== 'ALL' ? 'no-filter-results' : 'no-candidates'}
+              action={
+                priorityFilter !== 'ALL' ? (
+                  <Button variant="secondary" onClick={() => setPriorityFilter('ALL')}>
+                    Сбросить фильтр
+                  </Button>
+                ) : undefined
+              }
+            />
+          </div>
+        ) : (
+          <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden">
+            <table className="w-full text-[13px] border-collapse">
+              <thead>
+                <tr className="bg-[#EDF1F7] text-[#475569] text-[12px]">
+                  <th className="text-left font-medium px-3 h-10 w-[80px]">Код</th>
+                  <th className="text-left font-medium px-3 h-10 w-[60px]">Раздел</th>
+                  <th className="text-left font-medium px-3 h-10">Наименование параметра</th>
+                  <th className="text-right font-medium px-3 h-10 w-[120px]">Ожидается</th>
+                  <th className="text-right font-medium px-3 h-10 w-[120px]">Фактически</th>
+                  <th className="text-right font-medium px-3 h-10 w-[100px]">Δ</th>
+                  <th className="text-left font-medium px-3 h-10 w-[110px]">Источники</th>
+                  <th className="text-left font-medium px-3 h-10 w-[110px]">Приоритет</th>
+                  <th className="text-left font-medium px-3 h-10 w-[180px]">Статус</th>
+                  <th className="text-right font-medium px-3 h-10 w-[110px]" />
                 </tr>
-              ))}
-
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="px-3 py-10 text-center text-[13px] text-[#94A3B8]">
-                    В этой вкладке нет записей
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {rows.map((f) => (
+                  <tr key={f.id} className="h-10 border-t border-[#E2E8F0] hover:bg-[#E8F0FB]">
+                    <td className="px-3 mono text-[#0F172A]">{f.code}</td>
+                    <td className="px-3 text-[#475569]">{f.section}</td>
+                    <td className="px-3 text-[#0F172A] truncate">{f.title}</td>
+                    <td className="px-3 text-right num text-[#0F172A]">{f.expected}</td>
+                    <td className="px-3 text-right num text-[#0F172A]">{f.actual}</td>
+                    <td className="px-3 text-right num text-[#475569]">{f.delta}</td>
+                    <td className="px-3">
+                      <div className="flex items-center gap-1">
+                        <StageBadge stage="PD" active={f.sources.includes('PD')} />
+                        <StageBadge stage="RD" active={f.sources.includes('RD')} />
+                        <StageBadge stage="ID" active={f.sources.includes('ID')} />
+                      </div>
+                    </td>
+                    <td className="px-3"><PriorityIndicator priority={f.priority} /></td>
+                    <td className="px-3"><StatusBadge status={f.status} /></td>
+                    <td className="px-3 text-right">
+                      {f.status === 'CANDIDATE' ? (
+                        <Button variant="primary" onClick={() => onOpenVerification(protocolId)}>
+                          Проверить
+                        </Button>
+                      ) : f.status === 'SUSPICION' ? (
+                        <Button variant="secondary" onClick={() => onOpenHypotheses(protocolId)}>
+                          Привязать
+                        </Button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

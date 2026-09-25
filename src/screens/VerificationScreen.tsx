@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowLeft, Check, Save, FileWarning, UploadCloud, Layers, GitCompare, PartyPopper
+  ArrowLeft, Check, Save, FileWarning, UploadCloud, Layers, GitCompare
 } from 'lucide-react';
+import EmptyState from '../components/EmptyState';
 import Button from '../components/Button';
 import PriorityIndicator from '../components/PriorityIndicator';
 import StatusBadge from '../components/StatusBadge';
@@ -210,29 +211,24 @@ export default function VerificationScreen({ protocolId, onBack, onFinish }: Pro
         </div>
 
         <div className="flex-1 flex items-center justify-center px-8">
-          <div className="w-[520px] bg-white border border-[#E2E8F0] rounded-lg p-8 text-center">
-            <div className="w-14 h-14 rounded-full bg-[#ECFDF3] mx-auto flex items-center justify-center mb-4">
-              <PartyPopper size={24} className="text-[#027A48]" aria-hidden />
-            </div>
-            <h2 className="text-[18px] font-semibold text-[#0F172A] mb-2">
-              Все кандидаты обработаны
-            </h2>
-            <p className="text-[13px] text-[#475569] leading-5 mb-6">
-              Обработано {processedCount} из {CANDIDATES.length} кандидатов.
-              Подтверждено нарушений: {Object.values(decisions).filter((d) => d.kind === 'saved' && d.status === 'CONFIRMED_VIOLATION').length}.
-              Отклонено: {Object.values(decisions).filter((d) => d.kind === 'saved' && d.status === 'NEGATIVE_VERIFIED').length}.
-            </p>
-            <div className="flex items-center justify-center gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => { setQueueCompleted(false); setIndex(CANDIDATES.length - 1); }}
-              >
-                Вернуться к очереди
-              </Button>
-              <Button variant="primary" size="lg" onClick={() => onFinish(protocolId)}>
-                Перейти к финализации
-              </Button>
-            </div>
+          <div className="w-[560px] bg-white border border-[#E2E8F0] rounded-lg">
+            <EmptyState
+              kind="all-processed"
+              description={`Обработано ${processedCount} из ${CANDIDATES.length} кандидатов. Подтверждено нарушений: ${Object.values(decisions).filter((d) => d.kind === 'saved' && d.status === 'CONFIRMED_VIOLATION').length}. Отклонено: ${Object.values(decisions).filter((d) => d.kind === 'saved' && d.status === 'NEGATIVE_VERIFIED').length}.`}
+              action={
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => { setQueueCompleted(false); setIndex(CANDIDATES.length - 1); }}
+                  >
+                    Вернуться к очереди
+                  </Button>
+                  <Button variant="primary" size="lg" onClick={() => onFinish(protocolId)}>
+                    Перейти к финализации
+                  </Button>
+                </div>
+              }
+            />
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowLeft, Info, Link2, X, BarChart3 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
@@ -6,6 +6,8 @@ import PriorityIndicator from '../components/PriorityIndicator';
 import StageBadge from '../components/StageBadge';
 import { findings, detectionLabels } from '../mocks/data';
 import type { DetectionMethod, Finding } from '../types';
+import EmptyState from '../components/EmptyState';
+import { SkeletonCard } from '../components/Skeleton';
 
 interface Props {
   onBack: () => void;
@@ -117,6 +119,12 @@ function HypothesisCard({
 
 export default function HypothesesScreen({ onBack, onPromote }: Props) {
   const [rejected, setRejected] = useState<Record<string, boolean>>({});
+    const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setLoading(false), 500);
+    return () => window.clearTimeout(t);
+  }, []);
   const visible = SUSPICIONS.filter((f) => !rejected[f.id]);
 
   const handleReject = (id: string) =>
@@ -144,16 +152,36 @@ export default function HypothesesScreen({ onBack, onPromote }: Props) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          {visible.map((f) => (
-            <HypothesisCard
-              key={f.id}
-              finding={f}
-              onPromote={onPromote}
-              onReject={handleReject}
+                {loading ? (
+          <div className="grid grid-cols-2 gap-4">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="bg-white border border-[#E2E8F0] rounded-lg">
+            <EmptyState
+              kind="no-candidates"
+              title="Все гипотезы обработаны"
+              description="Свободный поиск не оставил нерешённых гипотез по этому протоколу. Можно вернуться к протоколу."
+              action={
+                <Button variant="secondary" onClick={onBack}>Вернуться к протоколу</Button>
+              }
             />
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            {visible.map((f) => (
+              <HypothesisCard
+                key={f.id}
+                finding={f}
+                onPromote={onPromote}
+                onReject={handleReject}
+              />
+            ))}
+          </div>
+        )}
 
         {visible.length === 0 && (
           <div className="bg-white border border-[#E2E8F0] rounded-lg py-16 text-center text-[13px] text-[#94A3B8]">
