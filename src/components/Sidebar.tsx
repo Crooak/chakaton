@@ -1,120 +1,53 @@
-import { Building2, FileText, BookOpen, LogOut } from 'lucide-react';
-import type { NavState } from '../App';
+import { Building2, FileText, Lightbulb, ScrollText } from 'lucide-react';
+import type { ScreenId } from '../App';
 
 interface Props {
-  activeScreen: NavState['screen'];
-  onNavigate: (screen: NavState['screen']) => void;
+  activeSection: ScreenId;
+  onNavigate: (screen: ScreenId) => void;
 }
 
-const NAV_ITEMS = [
-  { screen: 'dashboard' as const, icon: Building2, label: 'Объекты' },
-  { screen: 'protocol' as const, icon: FileText, label: 'Протоколы' },
+const items: { id: ScreenId; icon: typeof Building2; label: string }[] = [
+  { id:'dashboard',  icon: Building2,  label:'Объекты' },
+  { id:'protocol',   icon: FileText,   label:'Протоколы' },
+  { id:'hypotheses', icon: Lightbulb,  label:'Гипотезы' },
+  { id:'finalization', icon: ScrollText, label:'Журнал аудита' }
 ];
 
-export default function Sidebar({ activeScreen, onNavigate }: Props) {
+export default function Sidebar({ activeSection, onNavigate }: Props) {
   return (
-    <div
-      style={{
-        width: 48,
-        backgroundColor: '#0F172A',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        paddingTop: 12,
-        paddingBottom: 12,
-        flexShrink: 0,
-        zIndex: 10,
-      }}
-    >
-      {/* Logo */}
-      <div
-        style={{
-          width: 32, height: 32, borderRadius: 6,
-          backgroundColor: '#1B4E9B',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          marginBottom: 16, flexShrink: 0,
-        }}
+    <aside className="w-14 shrink-0 h-screen border-r border-[#E2E8F0] bg-white flex flex-col items-center py-3 gap-1">
+      <button
+        type="button"
+        onClick={() => onNavigate('dashboard')}
+        aria-label="На главную"
+        className="w-9 h-9 rounded-md bg-[#1B4E9B] text-white flex items-center justify-center font-semibold text-[13px] hover:bg-[#16407F]"
       >
-        <span style={{ color: '#FFFFFF', fontWeight: 700, fontSize: 14, fontFamily: 'JetBrains Mono, monospace' }}>И</span>
-      </div>
+        ИИ
+      </button>
 
-      {/* Nav items */}
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
-        {NAV_ITEMS.map(item => {
-          const Icon = item.icon;
-          const isActive = activeScreen === item.screen || (item.screen === 'dashboard' && ['object', 'protocol', 'verification', 'finalization'].includes(activeScreen));
+      <nav className="mt-4 flex flex-col gap-1" aria-label="Основная навигация">
+        {items.map(({ id, icon: Icon, label }) => {
+          const active = activeSection === id;
           return (
             <button
-              key={item.screen}
-              onClick={() => onNavigate(item.screen)}
-              aria-label={item.label}
-              title={item.label}
-              style={{
-                width: 36, height: 36, borderRadius: 8,
-                backgroundColor: isActive ? '#1B4E9B' : 'transparent',
-                border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: isActive ? '#FFFFFF' : '#94A3B8',
-                transition: 'background-color 100ms ease, color 100ms ease',
-              }}
-              onMouseEnter={e => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#1e2d47';
-                  (e.currentTarget as HTMLButtonElement).style.color = '#FFFFFF';
-                }
-              }}
-              onMouseLeave={e => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
-                  (e.currentTarget as HTMLButtonElement).style.color = '#94A3B8';
-                }
-              }}
+              key={id}
+              type="button"
+              onClick={() => onNavigate(id)}
+              title={label}
+              aria-label={label}
+              aria-current={active ? 'page' : undefined}
+              className={[
+                'w-10 h-10 rounded-md flex items-center justify-center transition-colors',
+                active
+                  ? 'bg-[#E8F0FB] text-[#1B4E9B]'
+                  : 'text-[#475569] hover:bg-[#E8F0FB] hover:text-[#1B4E9B]'
+              ].join(' ')}
             >
-              <Icon size={18} />
+              <Icon size={18} strokeWidth={1.75} />
             </button>
           );
         })}
-
-        {/* Knowledge base */}
-        <button
-          aria-label="База знаний"
-          title="База знаний"
-          style={{
-            width: 36, height: 36, borderRadius: 8,
-            backgroundColor: 'transparent', border: 'none', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#94A3B8',
-          }}
-        >
-          <BookOpen size={18} />
-        </button>
       </nav>
-
-      {/* User avatar */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
-        <button
-          aria-label="Выйти"
-          title="Выйти"
-          style={{
-            width: 36, height: 36, borderRadius: 8,
-            backgroundColor: 'transparent', border: 'none', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8',
-          }}
-        >
-          <LogOut size={16} />
-        </button>
-        <div
-          style={{
-            width: 32, height: 32, borderRadius: '50%',
-            backgroundColor: '#475569',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 12, fontWeight: 600, color: '#FFFFFF',
-          }}
-          title="Иванов А.В."
-        >
-          ИА
-        </div>
-      </div>
-    </div>
+    </aside>
   );
 }

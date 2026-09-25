@@ -1,686 +1,701 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  ChevronRight, ChevronLeft, ChevronDown, CheckCircle2,
-  PanelLeftClose, PanelLeftOpen, AlertOctagon,
+  ArrowLeft, Check, Save, FileWarning, UploadCloud, Layers, GitCompare, PartyPopper
 } from 'lucide-react';
-import type { ReasonCode, FindingStatus } from '../types';
-import { REASON_CODE_LABELS } from '../types';
-import { MOCK_OBJECTS, MOCK_PROTOCOL } from '../mocks/data';
-import type { Finding } from '../types';
+import Button from '../components/Button';
+import PriorityIndicator from '../components/PriorityIndicator';
 import StatusBadge from '../components/StatusBadge';
-import PriorityBadge from '../components/PriorityBadge';
+import StageBadge from '../components/StageBadge';
 import EvidencePanel from '../components/EvidencePanel';
-import type { NavState } from '../App';
+import {
+  protocol, reasonCodes, reasonLabels, inspector, approvalLabels
+} from '../mocks/data';
+import type { Finding, ReasonCode, RevisionCard } from '../types';
 
 interface Props {
   protocolId: string;
-  onNavigate: (screen: NavState['screen'], objectId?: string, protocolId?: string) => void;
+  onBack: () => void;
+  onFinish: (protocolId: string) => void;
 }
 
-type Decision = 'none' | 'confirmed' | 'rejected' | 'clarification';
+type Decision =
+  | { kind: 'none' }
+  | { kind: 'saved'; status: 'CONFIRMED_VIOLATION' | 'NEGATIVE_VERIFIED' | 'CLARIFICATION_REQUIRED'; reason?: ReasonCode; comment?: string; timestamp: string };
 
-interface CandidateState {
-  findingId: string;
-  decision: Decision;
-  reasonCode?: ReasonCode;
-  comment?: string;
-  finalStatus?: FindingStatus;
+const CANDIDATES = protocol.findings.filter((f) => f.status === 'CANDIDATE');
+
+function nowStr(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-const REASON_CODES: ReasonCode[] = [
-  'WRONG_REVISION',
-  'APPROVED_CHANGE',
-  'OCR_ERROR',
-  'BINDING_ERROR',
-  'NOT_APPLICABLE',
-  'OTHER',
-];
+/* ─────────── Выбор редакции (CLARIFICATION_REQUIRED) ─────────── */
 
-export default function VerificationScreen({ protocolId, onNavigate }: Props) {
-  const protocol = MOCK_PROTOCOL;
-  const obj = MOCK_OBJECTS.find(o => o.id === protocol.objectId) ?? MOCK_OBJECTS[0];
-
-  const candidates = protocol.findings.filter(f => f.status === 'CANDIDATE');
-  const [currentIdx, setCurrentIdx] = useState(2);
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [filterPriority, setFilterPriority] = useState<'all' | 'HIGH' | 'MEDIUM' | 'LOW'>('all');
-  const [states, setStates] = useState<Record<string, CandidateState>>(() => {
-    const init: Record<string, CandidateState> = {};
-    candidates.forEach((c, i) => {
-      init[c.id] = {
-        findingId: c.id,
-        decision: i < 2 ? (i === 0 ? 'confirmed' : 'rejected') : 'none',
-        finalStatus: i < 2 ? (i === 0 ? 'CONFIRMED_VIOLATION' : 'NEGATIVE_VERIFIED') : undefined,
-      };
-    });
-    return init;
-  });
-  const [comment, setComment] = useState('');
-
-  const current = candidates[currentIdx];
-  const currentState = current ? states[current.id] : null;
-  const processedCount = Object.values(states).filter(s => s.decision !== 'none').length;
-
-  const setDecision = (decision: Decision) => {
-    if (!current) return;
-    setStates(prev => ({
-      ...prev,
-      [current.id]: { ...prev[current.id], decision, reasonCode: undefined },
-    }));
-  };
-
-  const setReasonCode = (rc: ReasonCode) => {
-    if (!current) return;
-    setStates(prev => ({
-      ...prev,
-      [current.id]: { ...prev[current.id], reasonCode: rc },
-    }));
-  };
-
-  const saveDecision = () => {
-    if (!current || !currentState) return;
-    const finalStatus: FindingStatus =
-      currentState.decision === 'confirmed' ? 'CONFIRMED_VIOLATION'
-        : currentState.decision === 'clarification' ? 'CLARIFICATION_REQUIRED'
-          : 'NEGATIVE_VERIFIED';
-    setStates(prev => ({
-      ...prev,
-      [current.id]: { ...prev[current.id], finalStatus, comment },
-    }));
-    setComment('');
-    if (currentIdx < candidates.length - 1) {
-      setCurrentIdx(i => i + 1);
-    }
-  };
-
-  const goNext = useCallback(() => {
-    if (currentIdx < candidates.length - 1) setCurrentIdx(i => i + 1);
-  }, [currentIdx, candidates.length]);
-
-  const goPrev = useCallback(() => {
-    if (currentIdx > 0) setCurrentIdx(i => i - 1);
-  }, [currentIdx]);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === '1') setDecision('confirmed');
-      if (e.key === '2') setDecision('rejected');
-      if (e.key === '3') setDecision('clarification');
-      if (e.key === 'ArrowRight') goNext();
-      if (e.key === 'ArrowLeft') goPrev();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [current, goNext, goPrev]);
-
-  const allDone = processedCount === candidates.length && Object.values(states).every(s => s.finalStatus);
-
+function RevisionCardView({
+  card,
+  selected,
+  onSelect
+}: {
+  card: RevisionCard;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Topbar */}
-      <div
-        style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px', height: 44,
-          backgroundColor: '#FFFFFF', borderBottom: '1px solid #E2E8F0', flexShrink: 0, zIndex: 2,
-        }}
-      >
-        <button
-          onClick={() => onNavigate('dashboard')}
-          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94A3B8', fontSize: 12, fontFamily: 'inherit', padding: 0 }}
-        >Объекты</button>
-        <ChevronRight size={12} color="#94A3B8" />
-        <button
-          onClick={() => onNavigate('object', obj.id)}
-          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94A3B8', fontSize: 12, fontFamily: 'inherit', padding: 0 }}
-        >{obj.name}</button>
-        <ChevronRight size={12} color="#94A3B8" />
-        <button
-          onClick={() => onNavigate('protocol', obj.id, protocolId)}
-          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94A3B8', fontSize: 12, fontFamily: 'inherit', padding: 0 }}
-        >Протокол № {protocol.number}</button>
-        <ChevronRight size={12} color="#94A3B8" />
-        <span style={{ fontSize: 12, color: '#0F172A', fontWeight: 500 }}>Верификация кандидатов</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {allDone && (
-            <button
-              onClick={() => onNavigate('finalization', obj.id, protocolId)}
-              style={{
-                height: 32, padding: '0 14px', fontSize: 12, fontWeight: 500,
-                backgroundColor: '#1B4E9B', color: '#FFFFFF',
-                border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
-              }}
-            >
-              Перейти к финализации →
-            </button>
-          )}
+    <button
+      type="button"
+      onClick={onSelect}
+      className={[
+        'text-left flex-1 rounded-lg border p-4 transition-colors',
+        selected
+          ? 'border-[#1B4E9B] bg-[#E8F0FB]'
+          : 'border-[#E2E8F0] bg-white hover:bg-[#F5F7FA]'
+      ].join(' ')}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <StageBadge stage="RD" />
+        <span className="mono text-[13px] text-[#0F172A]">{card.documentCode}</span>
+        <span className="ml-auto text-[11px] text-[#475569]">{card.revision}</span>
+      </div>
+      <div className="text-[12px] text-[#475569] flex flex-col gap-0.5 mb-2">
+        <div>Статус: <span className="text-[#0F172A]">{approvalLabels[card.approvalStatus]}</span></div>
+        <div>Утверждён: <span className="mono text-[#0F172A]">{card.approvedAt}</span></div>
+        <div>Лист: <span className="num text-[#0F172A]">{card.sheetPage}</span></div>
+        <div className="mono text-[11px] text-[#94A3B8] truncate">
+          SHA-256: {card.sha256.slice(0, 16)}…
         </div>
       </div>
-
-      {/* 3-panel layout */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-        {/* LEFT PANEL — Queue */}
-        <div
-          style={{
-            width: leftCollapsed ? 44 : 280,
-            flexShrink: 0,
-            backgroundColor: '#FFFFFF',
-            borderRight: '1px solid #E2E8F0',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            transition: 'width 150ms ease',
-          }}
-        >
-          {/* Left panel header */}
-          <div
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: leftCollapsed ? '8px 10px' : '8px 12px',
-              borderBottom: '1px solid #E2E8F0', flexShrink: 0,
-            }}
-          >
-            {!leftCollapsed && (
-              <>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#0F172A' }}>
-                    {processedCount} из {candidates.length}
-                  </div>
-                  <div style={{ height: 4, backgroundColor: '#EDF1F7', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        height: '100%',
-                        width: `${(processedCount / candidates.length) * 100}%`,
-                        backgroundColor: '#1B4E9B',
-                        borderRadius: 2,
-                        transition: 'width 200ms ease',
-                      }}
-                    />
-                  </div>
-                </div>
-                <select
-                  value={filterPriority}
-                  onChange={e => setFilterPriority(e.target.value as typeof filterPriority)}
-                  style={{
-                    fontSize: 11, border: '1px solid #E2E8F0', borderRadius: 4,
-                    backgroundColor: '#F5F7FA', color: '#475569',
-                    padding: '2px 4px', fontFamily: 'inherit', cursor: 'pointer',
-                  }}
-                >
-                  <option value="all">Все</option>
-                  <option value="HIGH">HIGH</option>
-                  <option value="MEDIUM">MED</option>
-                  <option value="LOW">LOW</option>
-                </select>
-              </>
-            )}
-            <button
-              onClick={() => setLeftCollapsed(v => !v)}
-              aria-label={leftCollapsed ? 'Развернуть панель' : 'Свернуть панель'}
-              style={{
-                border: 'none', background: 'none', cursor: 'pointer',
-                color: '#94A3B8', display: 'flex', alignItems: 'center',
-                flexShrink: 0,
-              }}
-            >
-              {leftCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-            </button>
-          </div>
-
-          {/* Queue list */}
-          {!leftCollapsed && (
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              {candidates
-                .filter(c => filterPriority === 'all' || c.priority === filterPriority)
-                .map((c, idx) => {
-                  const realIdx = candidates.indexOf(c);
-                  const st = states[c.id];
-                  const isCurrent = realIdx === currentIdx;
-                  const isDone = st?.finalStatus !== undefined;
-                  return (
-                    <div
-                      key={c.id}
-                      onClick={() => setCurrentIdx(realIdx)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
-                        cursor: 'pointer',
-                        backgroundColor: isCurrent ? '#E8F0FB' : 'transparent',
-                        borderLeft: `3px solid ${isCurrent ? '#1B4E9B' : 'transparent'}`,
-                        borderBottom: '1px solid #F1F5F9',
-                        transition: 'background-color 80ms ease',
-                      }}
-                    >
-                      <div style={{ flexShrink: 0, width: 16, display: 'flex', justifyContent: 'center' }}>
-                        {isDone ? (
-                          <CheckCircle2 size={14} color={st.finalStatus === 'CONFIRMED_VIOLATION' ? '#B42318' : '#027A48'} />
-                        ) : (
-                          <span
-                            style={{
-                              width: 6, height: 6, borderRadius: '50%',
-                              backgroundColor: isCurrent ? '#1B4E9B' : '#CBD5E1',
-                              display: 'inline-block',
-                            }}
-                          />
-                        )}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: 600, color: isCurrent ? '#1B4E9B' : '#0F172A' }}>
-                            {c.code}
-                          </span>
-                          <PriorityBadge priority={c.priority} showLabel={false} />
-                        </div>
-                        <div style={{ fontSize: 11, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {c.parameterName}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-        </div>
-
-        {/* CENTER PANEL — Evidence */}
-        <div
-          style={{
-            flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0,
-            backgroundColor: '#F5F7FA',
-          }}
-        >
-          {current ? (
-            <>
-              {/* Candidate header */}
-              <div
-                style={{
-                  backgroundColor: '#FFFFFF', borderBottom: '1px solid #E2E8F0',
-                  padding: '10px 16px', flexShrink: 0,
-                  display: 'flex', alignItems: 'center', gap: 12,
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 700, color: '#0F172A' }}>
-                      {current.code}
-                    </span>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>·</span>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{current.parameterName}</span>
-                    <PriorityBadge priority={current.priority} />
-                    <span style={{ fontSize: 12, color: '#475569' }}>Раздел: <strong>{current.section}</strong></span>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                  <button
-                    onClick={goPrev}
-                    disabled={currentIdx === 0}
-                    style={{
-                      border: '1px solid #E2E8F0', background: '#FFFFFF', borderRadius: 6,
-                      padding: '0 8px', height: 30, cursor: currentIdx === 0 ? 'not-allowed' : 'pointer',
-                      color: currentIdx === 0 ? '#CBD5E1' : '#475569', display: 'flex', alignItems: 'center',
-                    }}
-                    aria-label="Предыдущий"
-                  >
-                    <ChevronLeft size={14} />
-                  </button>
-                  <button
-                    onClick={goNext}
-                    disabled={currentIdx === candidates.length - 1}
-                    style={{
-                      border: '1px solid #E2E8F0', background: '#FFFFFF', borderRadius: 6,
-                      padding: '0 8px', height: 30, cursor: currentIdx === candidates.length - 1 ? 'not-allowed' : 'pointer',
-                      color: currentIdx === candidates.length - 1 ? '#CBD5E1' : '#475569', display: 'flex', alignItems: 'center',
-                    }}
-                    aria-label="Следующий"
-                  >
-                    <ChevronRight size={14} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Scrollable content */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {/* Value comparison */}
-                <div
-                  style={{
-                    backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0',
-                    borderRadius: 8, padding: 16, flexShrink: 0,
-                  }}
-                >
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                    <ValueBox
-                      label="Ожидается"
-                      value={current.expected}
-                      source={current.evidence?.[0] ? `Источник: ${current.evidence[0].documentCode} лист ${current.evidence[0].sheetPage}` : undefined}
-                      color="#2E90FA"
-                    />
-                    <ValueBox
-                      label="Фактически"
-                      value={current.actual}
-                      source={current.evidence?.[1] ? `Источник: ${current.evidence[1].documentCode} лист ${current.evidence[1].sheetPage}` : undefined}
-                      color="#F04438"
-                    />
-                  </div>
-                  <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span
-                      style={{
-                        fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 600,
-                        color: '#B42318', fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      Δ {current.delta}
-                    </span>
-                    {current.triggerDescription && (
-                      <>
-                        <span style={{ color: '#CBD5E1' }}>·</span>
-                        <span style={{ fontSize: 12, color: '#475569' }}>
-                          Триггер: <strong>{current.triggerDescription}</strong>
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Evidence split view */}
-                {current.evidence && current.evidence.length >= 2 && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, flex: 1, minHeight: 260 }}>
-                    <EvidencePanel
-                      evidence={current.evidence[0]}
-                      label="Ожидаемое (ПД)"
-                    />
-                    <EvidencePanel
-                      evidence={current.evidence[1]}
-                      label="Фактическое (РД)"
-                    />
-                  </div>
-                )}
-
-                {/* AI rationale */}
-                <div
-                  style={{
-                    backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0',
-                    borderRadius: 8, padding: 14, flexShrink: 0,
-                  }}
-                >
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
-                    Обоснование ИИ
-                  </div>
-                  <p style={{ margin: 0, fontSize: 12, color: '#0F172A', lineHeight: '18px' }}>
-                    {current.aiRationale ?? 'Обоснование не предоставлено.'}
-                  </p>
-                  {current.normReference && (
-                    <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, color: '#94A3B8' }}>Нормативная база:</span>
-                      <span style={{ fontSize: 11, color: '#1B4E9B', fontWeight: 500 }}>{current.normReference}</span>
-                    </div>
-                  )}
-                  <div
-                    style={{
-                      marginTop: 8, padding: '5px 8px', borderRadius: 4,
-                      backgroundColor: current.approvedChange ? '#FFFAEB' : '#F8FAFC',
-                      border: `1px solid ${current.approvedChange ? '#FCD34D' : '#E2E8F0'}`,
-                      fontSize: 11,
-                    }}
-                  >
-                    <span style={{ fontWeight: 600, color: current.approvedChange ? '#B54708' : '#0F172A' }}>
-                      Согласованное изменение:&nbsp;
-                    </span>
-                    <span style={{ color: current.approvedChange ? '#B54708' : '#94A3B8' }}>
-                      {current.approvedChange ?? 'не найдено'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
-              <CheckCircle2 size={40} color="#027A48" />
-              <p style={{ fontSize: 15, fontWeight: 600, color: '#0F172A', margin: 0 }}>Все кандидаты обработаны</p>
-              <button
-                onClick={() => onNavigate('finalization', obj.id, protocolId)}
-                style={{
-                  height: 36, padding: '0 16px', fontSize: 13, fontWeight: 500,
-                  backgroundColor: '#1B4E9B', color: '#FFFFFF',
-                  border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
-                }}
-              >
-                Перейти к финализации
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* RIGHT PANEL — Decision */}
-        <div
-          style={{
-            width: 340, flexShrink: 0,
-            backgroundColor: '#FFFFFF', borderLeft: '1px solid #E2E8F0',
-            display: 'flex', flexDirection: 'column', overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              padding: '12px 16px', borderBottom: '1px solid #E2E8F0', flexShrink: 0,
-            }}
-          >
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Решение эксперта
-            </div>
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {/* Decision buttons */}
-            <button
-              onClick={() => setDecision('confirmed')}
-              style={{
-                width: '100%', height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                backgroundColor: currentState?.decision === 'confirmed' ? '#B42318' : '#FFFFFF',
-                color: currentState?.decision === 'confirmed' ? '#FFFFFF' : '#B42318',
-                border: `2px solid #B42318`,
-                borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
-                transition: 'all 120ms ease',
-              }}
-            >
-              <AlertOctagon size={16} />
-              Подтвердить нарушение
-            </button>
-
-            <button
-              onClick={() => setDecision('rejected')}
-              style={{
-                width: '100%', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                backgroundColor: currentState?.decision === 'rejected' ? '#EDF1F7' : '#FFFFFF',
-                color: '#0F172A',
-                border: `1px solid ${currentState?.decision === 'rejected' ? '#CBD5E1' : '#E2E8F0'}`,
-                borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
-              }}
-            >
-              Отклонить
-            </button>
-
-            <button
-              onClick={() => setDecision('clarification')}
-              style={{
-                width: '100%', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                backgroundColor: currentState?.decision === 'clarification' ? '#F4F3FF' : '#FFFFFF',
-                color: currentState?.decision === 'clarification' ? '#5925DC' : '#0F172A',
-                border: `1px solid ${currentState?.decision === 'clarification' ? '#C4B5FD' : '#E2E8F0'}`,
-                borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
-              }}
-            >
-              Требует уточнения
-            </button>
-
-            {/* Reason codes — appear when "rejected" */}
-            {currentState?.decision === 'rejected' && (
-              <div
-                style={{
-                  border: '1px solid #E2E8F0', borderRadius: 8, padding: 12,
-                  backgroundColor: '#F8FAFC',
-                }}
-              >
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                  Код причины отклонения
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                  {REASON_CODES.map(rc => (
-                    <button
-                      key={rc}
-                      onClick={() => setReasonCode(rc)}
-                      style={{
-                        padding: '5px 8px', fontSize: 11, fontWeight: 500, textAlign: 'left',
-                        backgroundColor: currentState.reasonCode === rc ? '#E8F0FB' : '#FFFFFF',
-                        color: currentState.reasonCode === rc ? '#1B4E9B' : '#475569',
-                        border: `1px solid ${currentState.reasonCode === rc ? '#C7D7F4' : '#E2E8F0'}`,
-                        borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
-                        lineHeight: '16px',
-                        transition: 'all 80ms ease',
-                      }}
-                    >
-                      {REASON_CODE_LABELS[rc]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Comment */}
-            <div>
-              <label
-                style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#475569', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.4 }}
-              >
-                Комментарий инспектора
-              </label>
-              <textarea
-                value={comment}
-                onChange={e => setComment(e.target.value)}
-                placeholder="Введите комментарий..."
-                rows={3}
-                style={{
-                  width: '100%', padding: '7px 10px', fontSize: 12,
-                  border: '1px solid #CBD5E1', borderRadius: 8,
-                  fontFamily: 'inherit', resize: 'none', outline: 'none',
-                  color: '#0F172A', backgroundColor: '#FFFFFF',
-                  boxSizing: 'border-box',
-                }}
-              />
-            </div>
-
-            {/* Save */}
-            <button
-              onClick={saveDecision}
-              disabled={!currentState || currentState.decision === 'none' || (currentState.decision === 'rejected' && !currentState.reasonCode)}
-              style={{
-                width: '100%', height: 40, fontSize: 13, fontWeight: 600,
-                backgroundColor: (!currentState || currentState.decision === 'none') ? '#F1F5F9' : '#1B4E9B',
-                color: (!currentState || currentState.decision === 'none') ? '#94A3B8' : '#FFFFFF',
-                border: 'none', borderRadius: 8,
-                cursor: (!currentState || currentState.decision === 'none') ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit', marginTop: 4,
-                transition: 'all 120ms ease',
-              }}
-            >
-              Сохранить решение
-            </button>
-
-            {/* Saved status */}
-            {currentState?.finalStatus && (
-              <div
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px',
-                  backgroundColor: '#ECFDF3', border: '1px solid #A7F3D0',
-                  borderRadius: 6, fontSize: 12, color: '#027A48',
-                }}
-              >
-                <CheckCircle2 size={14} />
-                Решение сохранено
-                <button
-                  style={{
-                    marginLeft: 'auto', border: 'none', background: 'none', cursor: 'pointer',
-                    fontSize: 11, color: '#027A48', fontFamily: 'inherit',
-                  }}
-                >
-                  Изменить
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Current status indicator */}
-          {current && (
-            <div style={{ padding: '8px 12px', borderTop: '1px solid #E2E8F0', flexShrink: 0 }}>
-              <StatusBadge status={currentState?.finalStatus ?? current.status} />
-            </div>
-          )}
-        </div>
+      <div className="text-[13px] text-[#0F172A] font-medium border-t border-[#E2E8F0] pt-2">
+        {card.extractedValue}
       </div>
-
-      {/* Hotkey bar */}
-      <div
-        style={{
-          height: 32, backgroundColor: '#EDF1F7', borderTop: '1px solid #E2E8F0',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20,
-          fontSize: 11, color: '#475569', flexShrink: 0,
-        }}
-      >
-        {[
-          ['1', 'подтвердить'],
-          ['2', 'отклонить'],
-          ['3', 'уточнить'],
-          ['←', 'предыдущий'],
-          ['→', 'следующий'],
-          ['Space', 'увеличить чертёж'],
-        ].map(([key, action]) => (
-          <span key={key} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <kbd
-              style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                minWidth: 20, height: 18, padding: '0 4px',
-                backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1',
-                borderRadius: 4, fontSize: 10, fontFamily: 'JetBrains Mono, monospace',
-                color: '#0F172A', boxShadow: '0 1px 0 #CBD5E1',
-              }}
-            >
-              {key}
-            </kbd>
-            <span>{action}</span>
-          </span>
-        ))}
-      </div>
-    </div>
+      {selected && (
+        <div className="mt-2 flex items-center gap-1 text-[12px] text-[#1B4E9B]">
+          <Check size={12} /> Выбрана как актуальная
+        </div>
+      )}
+    </button>
   );
 }
 
-function ValueBox({
-  label, value, source, color,
-}: {
-  label: string;
-  value: string;
-  source?: string;
-  color: string;
-}) {
+/* ─────────── Основной компонент ─────────── */
+
+export default function VerificationScreen({ protocolId, onBack, onFinish }: Props) {
+  const [index, setIndex] = useState(2);
+  const [decisions, setDecisions] = useState<Record<string, Decision>>({});
+  const [comment, setComment] = useState('');
+  const [showReasons, setShowReasons] = useState(false);
+  const [pendingReason, setPendingReason] = useState<ReasonCode | undefined>(undefined);
+  const [selectedRevisionIdx, setSelectedRevisionIdx] = useState<0 | 1 | null>(null);
+  const [selectedAtoms, setSelectedAtoms] = useState<Record<string, boolean>>({});
+  const [queueCompleted, setQueueCompleted] = useState(false);
+
+  const finding: Finding = CANDIDATES[index];
+  const currentDecision = decisions[finding.id] ?? { kind: 'none' } as Decision;
+
+  const processedCount = Object.values(decisions).filter((d) => d.kind === 'saved').length;
+  const allProcessed = processedCount === CANDIDATES.length;
+
+  const isClarification = !!finding.clarificationConflict;
+  const isComposite = !!finding.composite;
+
+  /* ─── Клавиатурные сокращения ─── */
+  useEffect(() => {
+    if (queueCompleted) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+      if (isClarification) {
+        if (e.key === '1') { e.preventDefault(); if (selectedRevisionIdx !== null) handleClarificationSave(); }
+        else if (e.key === '3') { e.preventDefault(); setShowReasons(true); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); goPrev(); }
+        return;
+      }
+      if (e.key === '1') { e.preventDefault(); handleConfirm(); }
+      else if (e.key === '2') { e.preventDefault(); setShowReasons(true); }
+      else if (e.key === '3') { e.preventDefault(); handleClarify(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
+      else if (e.key === 'ArrowLeft')  { e.preventDefault(); goPrev(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finding.id, showReasons, pendingReason, comment, selectedRevisionIdx, queueCompleted, isClarification]);
+
+  const resetLocal = () => {
+    setComment('');
+    setShowReasons(false);
+    setPendingReason(undefined);
+    setSelectedRevisionIdx(null);
+    setSelectedAtoms({});
+  };
+
+  const goNext = () => {
+    if (index < CANDIDATES.length - 1) {
+      setIndex(index + 1);
+      resetLocal();
+    } else {
+      setQueueCompleted(true);
+    }
+  };
+
+  const goPrev = () => {
+    if (index > 0) {
+      setIndex(index - 1);
+      resetLocal();
+    }
+  };
+
+  const saveDecision = (d: Decision) => {
+    setDecisions((prev) => ({ ...prev, [finding.id]: d }));
+  };
+
+  const handleConfirm = () => {
+    if (isComposite) return;
+    saveDecision({ kind: 'saved', status: 'CONFIRMED_VIOLATION', comment, timestamp: nowStr() });
+    window.setTimeout(goNext, 120);
+  };
+
+  const handleRejectSave = () => {
+    if (!pendingReason) return;
+    saveDecision({
+      kind: 'saved', status: 'NEGATIVE_VERIFIED',
+      reason: pendingReason, comment, timestamp: nowStr()
+    });
+    window.setTimeout(goNext, 120);
+  };
+
+  const handleClarify = () => {
+    saveDecision({ kind: 'saved', status: 'CLARIFICATION_REQUIRED', comment, timestamp: nowStr() });
+    window.setTimeout(goNext, 120);
+  };
+
+  const handleClarificationSave = () => {
+    if (selectedRevisionIdx === null) return;
+    saveDecision({
+      kind: 'saved',
+      status: selectedRevisionIdx === 0 ? 'NEGATIVE_VERIFIED' : 'CONFIRMED_VIOLATION',
+      comment, timestamp: nowStr()
+    });
+    window.setTimeout(goNext, 120);
+  };
+
+  const handleCompositeSave = () => {
+    const atoms = Object.entries(selectedAtoms).filter(([, v]) => v).map(([k]) => k);
+    if (atoms.length === 0) return;
+    saveDecision({
+      kind: 'saved',
+      status: 'CONFIRMED_VIOLATION',
+      comment: `${comment ? comment + ' · ' : ''}Выделено находок: ${atoms.length}`,
+      timestamp: nowStr()
+    });
+    window.setTimeout(goNext, 120);
+  };
+
+  const progress = useMemo(() => ((index + 1) / CANDIDATES.length) * 100, [index]);
+
+  /* ─── Экран «Все кандидаты обработаны» ─── */
+  if (queueCompleted) {
+    return (
+      <div className="h-screen flex flex-col bg-[#F5F7FA] overflow-hidden">
+        <div className="h-11 shrink-0 px-6 border-b border-[#E2E8F0] bg-white flex items-center gap-4">
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-[13px] text-[#475569] hover:text-[#0F172A] flex items-center gap-1"
+          >
+            <ArrowLeft size={14} /> К протоколу
+          </button>
+          <span className="text-[#94A3B8]">·</span>
+          <span className="text-[13px] text-[#0F172A]">Верификация завершена</span>
+        </div>
+
+        <div className="flex-1 flex items-center justify-center px-8">
+          <div className="w-[520px] bg-white border border-[#E2E8F0] rounded-lg p-8 text-center">
+            <div className="w-14 h-14 rounded-full bg-[#ECFDF3] mx-auto flex items-center justify-center mb-4">
+              <PartyPopper size={24} className="text-[#027A48]" aria-hidden />
+            </div>
+            <h2 className="text-[18px] font-semibold text-[#0F172A] mb-2">
+              Все кандидаты обработаны
+            </h2>
+            <p className="text-[13px] text-[#475569] leading-5 mb-6">
+              Обработано {processedCount} из {CANDIDATES.length} кандидатов.
+              Подтверждено нарушений: {Object.values(decisions).filter((d) => d.kind === 'saved' && d.status === 'CONFIRMED_VIOLATION').length}.
+              Отклонено: {Object.values(decisions).filter((d) => d.kind === 'saved' && d.status === 'NEGATIVE_VERIFIED').length}.
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => { setQueueCompleted(false); setIndex(CANDIDATES.length - 1); }}
+              >
+                Вернуться к очереди
+              </Button>
+              <Button variant="primary" size="lg" onClick={() => onFinish(protocolId)}>
+                Перейти к финализации
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      style={{
-        padding: '14px 16px',
-        border: `2px solid ${color}20`,
-        borderRadius: 8,
-        backgroundColor: `${color}05`,
-      }}
-    >
-      <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 500, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-        {label}
+    <div className="h-screen flex flex-col bg-[#F5F7FA] overflow-hidden">
+      {/* Тонкая шапка */}
+      <div className="h-11 shrink-0 px-6 border-b border-[#E2E8F0] bg-white flex items-center gap-4">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-[13px] text-[#475569] hover:text-[#0F172A] flex items-center gap-1"
+        >
+          <ArrowLeft size={14} /> К протоколу
+        </button>
+        <span className="text-[#94A3B8]">·</span>
+        <span className="text-[13px] text-[#0F172A]">Верификация кандидата</span>
+        <span className="ml-auto text-[12px] text-[#475569]">
+          Обработано {processedCount} из {CANDIDATES.length}
+        </span>
       </div>
-      <div
-        style={{
-          fontSize: 24, fontWeight: 700, color: '#0F172A',
-          fontVariantNumeric: 'tabular-nums', lineHeight: '32px',
-        }}
-      >
-        {value}
+
+      <div className="flex-1 flex min-h-0">
+        {/* ЛЕВАЯ ПАНЕЛЬ */}
+        <aside className="w-[280px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col min-h-0">
+          <div className="px-4 py-3 border-b border-[#E2E8F0]">
+            <div className="flex items-center justify-between text-[12px] text-[#475569] mb-2">
+              <span>Очередь кандидатов</span>
+              <span className="num">{index + 1} из {CANDIDATES.length}</span>
+            </div>
+            <div className="h-1 w-full bg-[#EDF1F7] rounded-full overflow-hidden">
+              <div className="h-full bg-[#1B4E9B]" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {CANDIDATES.map((f, i) => {
+              const d = decisions[f.id];
+              const isActive = i === index;
+              const isDone = d && d.kind === 'saved';
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => { setIndex(i); resetLocal(); }}
+                  className={[
+                    'w-full text-left px-3 py-2 border-b border-[#E2E8F0] flex items-center gap-2',
+                    isActive ? 'bg-[#E8F0FB]' : 'hover:bg-[#F5F7FA]'
+                  ].join(' ')}
+                >
+                  <span className={[
+                    'w-4 h-4 shrink-0 rounded-full flex items-center justify-center',
+                    isDone ? 'bg-[#ECFDF3] text-[#027A48]' : 'border border-[#CBD5E1]'
+                  ].join(' ')}>
+                    {isDone && <Check size={10} />}
+                  </span>
+                  <span className="mono text-[12px] text-[#0F172A] shrink-0">{f.code}</span>
+                  <span className="text-[12px] text-[#475569] truncate">{f.title}</span>
+                  <span className="ml-auto shrink-0">
+                    <PriorityIndicator priority={f.priority} />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+
+        {/* ЦЕНТРАЛЬНАЯ ПАНЕЛЬ */}
+        <section className="flex-1 min-w-0 flex flex-col p-5 gap-4 overflow-hidden">
+          {/* Шапка кандидата */}
+          <div className="flex items-start gap-3">
+            <span className="mono text-[16px] text-[#0F172A] font-medium">{finding.code}</span>
+            <h2 className="text-[16px] font-semibold text-[#0F172A]">{finding.title}</h2>
+            <span className="text-[12px] text-[#475569]">Раздел: {finding.section}</span>
+            <span className="text-[#94A3B8]">·</span>
+            <PriorityIndicator priority={finding.priority} />
+            {isComposite && (
+              <span className="inline-flex items-center gap-1 px-2 h-6 rounded-[4px] bg-[#F4F3FF] text-[#5925DC] text-[12px] font-medium">
+                <Layers size={12} /> Составной
+              </span>
+            )}
+            {isClarification && (
+              <span className="inline-flex items-center gap-1 px-2 h-6 rounded-[4px] bg-[#F4F3FF] text-[#5925DC] text-[12px] font-medium">
+                <GitCompare size={12} /> Конфликт редакций
+              </span>
+            )}
+            <div className="ml-auto">
+              <StatusBadge status={finding.status} />
+            </div>
+          </div>
+
+          {/* Блок сравнения — либо обычный, либо выбор редакции */}
+          {isClarification && finding.clarificationConflict ? (
+            <div className="bg-white border border-[#E2E8F0] rounded-lg p-4">
+              <div className="text-[12px] text-[#94A3B8] uppercase tracking-wide mb-3">
+                Конфликт редакций · Выберите актуальную
+              </div>
+              <div className="flex gap-3">
+                {finding.clarificationConflict.revisions.map((rev, i) => (
+                  <RevisionCardView
+                    key={i}
+                    card={rev}
+                    selected={selectedRevisionIdx === i}
+                    onSelect={() => setSelectedRevisionIdx(i as 0 | 1)}
+                  />
+                ))}
+              </div>
+              <div className="mt-4 pt-3 border-t border-[#E2E8F0] text-[12px] text-[#475569]">
+                {finding.aiRationale}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white border border-[#E2E8F0] rounded-lg p-4">
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <div className="text-[12px] text-[#94A3B8] uppercase tracking-wide mb-1">Ожидается</div>
+                  <div className="text-[24px] leading-8 font-bold text-[#0F172A] num">{finding.expected}</div>
+                  <div className="text-[12px] text-[#475569] mt-1">
+                    Источник: {finding.expectedEvidence.stage} · {finding.expectedEvidence.documentCode} · лист {finding.expectedEvidence.sheetPage}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[12px] text-[#94A3B8] uppercase tracking-wide mb-1">Фактически</div>
+                  <div className="text-[24px] leading-8 font-bold text-[#0F172A] num">{finding.actual}</div>
+                  <div className="text-[12px] text-[#475569] mt-1">
+                    Источник: {finding.actualEvidence.stage} · {finding.actualEvidence.documentCode} · лист {finding.actualEvidence.sheetPage}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-[#E2E8F0] flex items-center gap-3 text-[12px] text-[#475569] flex-wrap">
+                <span>Δ <span className="num text-[#0F172A] font-medium">{finding.delta}</span></span>
+                <span className="text-[#CBD5E1]">·</span>
+                <span>Триггер: <span className="text-[#0F172A]">{finding.trigger}</span></span>
+                {finding.normReference && (
+                  <>
+                    <span className="text-[#CBD5E1]">·</span>
+                    <span className="text-[#1B4E9B]">{finding.normReference}</span>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Блок составного кандидата */}
+          {isComposite && finding.composite && (
+            <div className="bg-white border border-[#E2E8F0] rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Layers size={14} className="text-[#5925DC]" aria-hidden />
+                <div className="text-[13px] font-medium text-[#0F172A]">
+                  Разделить на атомарные находки
+                </div>
+                <span className="text-[11px] text-[#94A3B8]">
+                  · {finding.composite.atoms.length} под-параметров
+                </span>
+              </div>
+              {finding.composite.note && (
+                <div className="text-[12px] text-[#5925DC] bg-[#F4F3FF] border border-[#E9D7FE] rounded-md px-3 py-2 mb-3">
+                  {finding.composite.note}
+                </div>
+              )}
+              <div className="grid grid-cols-1 gap-1 max-h-[180px] overflow-y-auto pr-1">
+                {finding.composite.atoms.map((atom) => (
+                  <label
+                    key={atom.id}
+                    className="flex items-center gap-3 px-3 py-2 rounded-md border border-[#E2E8F0] hover:bg-[#F5F7FA] cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!selectedAtoms[atom.id]}
+                      onChange={(e) =>
+                        setSelectedAtoms((prev) => ({ ...prev, [atom.id]: e.target.checked }))
+                      }
+                      className="w-4 h-4 accent-[#1B4E9B]"
+                    />
+                    <span className="mono text-[12px] text-[#0F172A] shrink-0 w-[70px]">{atom.code}</span>
+                    <span className="text-[13px] text-[#0F172A] flex-1 truncate">{atom.title}</span>
+                    <span className="text-[12px] text-[#475569] num shrink-0">{atom.expected}</span>
+                    <span className="text-[#CBD5E1]">→</span>
+                    <span className="text-[12px] text-[#0F172A] num shrink-0">{atom.actual}</span>
+                    <span className="text-[12px] text-[#475569] num shrink-0 w-[60px] text-right">{atom.delta}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Сплит-вью чертежей */}
+          <div className="flex gap-3 flex-1 min-h-0">
+            <EvidencePanel fragment={finding.expectedEvidence} accent="expected" />
+            <EvidencePanel fragment={finding.actualEvidence}   accent="actual" />
+          </div>
+
+          {/* Обоснование */}
+          {!isClarification && (
+            <div className="bg-white border border-[#E2E8F0] rounded-lg p-4">
+              <div className="text-[12px] text-[#94A3B8] uppercase tracking-wide mb-1.5">Обоснование ИИ</div>
+              <p className="text-[13px] text-[#0F172A] leading-5 mb-2">{finding.aiRationale}</p>
+              <div className="flex items-center gap-3 text-[12px] flex-wrap">
+                {finding.normReference && (
+                  <span className="text-[#1B4E9B]">Норматив: {finding.normReference}</span>
+                )}
+                <span className="text-[#CBD5E1]">·</span>
+                <span className="text-[#475569]">
+                  Согласованное изменение: <span className="text-[#0F172A] font-medium">{finding.approvedChange ?? 'не найдено'}</span>
+                </span>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* ПРАВАЯ ПАНЕЛЬ */}
+        <aside className="w-[340px] shrink-0 border-l border-[#E2E8F0] bg-white flex flex-col min-h-0">
+          <div className="px-4 py-3 border-b border-[#E2E8F0] text-[12px] text-[#475569] uppercase tracking-wide">
+            Решение инспектора
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+            {currentDecision.kind === 'saved' ? (
+              <div className="border border-[#E2E8F0] rounded-lg p-3 bg-[#F8FAFC]">
+                <StatusBadge status={currentDecision.status} />
+                <div className="mt-2 text-[12px] text-[#475569]">
+                  {inspector.name} · {currentDecision.timestamp}
+                </div>
+                {currentDecision.reason && (
+                  <div className="mt-1 text-[12px] text-[#475569]">
+                    Причина: {reasonLabels[currentDecision.reason]}
+                  </div>
+                )}
+                {currentDecision.comment && (
+                  <div className="mt-1 text-[12px] text-[#475569] italic">«{currentDecision.comment}»</div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => saveDecision({ kind: 'none' })}
+                  className="mt-3 text-[12px] text-[#1B4E9B] hover:underline"
+                >
+                  Изменить решение
+                </button>
+              </div>
+            ) : isClarification ? (
+              /* Состояние CLARIFICATION_REQUIRED */
+              <>
+                <div className="text-[13px] text-[#0F172A] leading-5 mb-1">
+                  Выберите актуальную редакцию в центральной панели — по ней будет принято решение.
+                </div>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  disabled={selectedRevisionIdx === null}
+                  className="w-full"
+                  onClick={handleClarificationSave}
+                >
+                  Сохранить выбор редакции
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  className="w-full"
+                  onClick={handleClarify}
+                >
+                  Требует уточнения у заказчика
+                </Button>
+                <div className="mt-2">
+                  <div className="text-[12px] text-[#94A3B8] uppercase tracking-wide mb-1.5">
+                    Комментарий инспектора
+                  </div>
+                  <textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    rows={3}
+                    placeholder="Обоснование выбора редакции"
+                    className="w-full px-2.5 py-2 border border-[#CBD5E1] rounded-md text-[13px] resize-none outline-none focus:border-[#1B4E9B]"
+                  />
+                </div>
+              </>
+            ) : isComposite ? (
+              /* Составной кандидат */
+              <>
+                <div className="text-[13px] text-[#0F172A] leading-5 mb-1">
+                  Отметьте в центральной панели, какие под-параметры подтверждаются. Каждый подтверждённый под-параметр станет отдельной находкой.
+                </div>
+                <Button
+                  variant="danger"
+                  size="lg"
+                  disabled={!Object.values(selectedAtoms).some(Boolean)}
+                  className="w-full"
+                  onClick={handleCompositeSave}
+                >
+                  Подтвердить выбранные находки
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  className="w-full"
+                  onClick={() => setShowReasons(true)}
+                >
+                  Отклонить кандидата
+                </Button>
+                {showReasons && (
+                  <div className="mt-2">
+                    <div className="text-[12px] text-[#94A3B8] uppercase tracking-wide mb-2">
+                      Код причины отклонения
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {reasonCodes.map((rc) => {
+                        const active = pendingReason === rc;
+                        return (
+                          <button
+                            key={rc}
+                            type="button"
+                            onClick={() => setPendingReason(rc)}
+                            className={[
+                              'text-left px-2.5 py-2 rounded-md border text-[12px] leading-4 transition-colors',
+                              active
+                                ? 'bg-[#E8F0FB] border-[#1B4E9B] text-[#1B4E9B]'
+                                : 'bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F5F7FA]'
+                            ].join(' ')}
+                          >
+                            {reasonLabels[rc]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="lg"
+                      className="w-full mt-3"
+                      disabled={!pendingReason}
+                      icon={<Save size={14} />}
+                      onClick={handleRejectSave}
+                    >
+                      Сохранить решение
+                    </Button>
+                  </div>
+                )}
+                <div className="mt-2">
+                  <div className="text-[12px] text-[#94A3B8] uppercase tracking-wide mb-1.5">
+                    Комментарий инспектора
+                  </div>
+                  <textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    rows={2}
+                    placeholder="Обоснование"
+                    className="w-full px-2.5 py-2 border border-[#CBD5E1] rounded-md text-[13px] resize-none outline-none focus:border-[#1B4E9B]"
+                  />
+                </div>
+              </>
+            ) : (
+              /* Стандартный кандидат */
+              <>
+                <Button variant="danger" size="lg" onClick={handleConfirm} className="w-full">
+                  Подтвердить нарушение
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  onClick={() => setShowReasons(true)}
+                  className="w-full"
+                >
+                  Отклонить
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  onClick={handleClarify}
+                  className="w-full"
+                >
+                  Требует уточнения
+                </Button>
+
+                {showReasons && (
+                  <div className="mt-2">
+                    <div className="text-[12px] text-[#94A3B8] uppercase tracking-wide mb-2">
+                      Код причины отклонения
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {reasonCodes.map((rc) => {
+                        const active = pendingReason === rc;
+                        return (
+                          <button
+                            key={rc}
+                            type="button"
+                            onClick={() => setPendingReason(rc)}
+                            className={[
+                              'text-left px-2.5 py-2 rounded-md border text-[12px] leading-4 transition-colors',
+                              active
+                                ? 'bg-[#E8F0FB] border-[#1B4E9B] text-[#1B4E9B]'
+                                : 'bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F5F7FA]'
+                            ].join(' ')}
+                          >
+                            {reasonLabels[rc]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-2">
+                  <div className="text-[12px] text-[#94A3B8] uppercase tracking-wide mb-1.5">
+                    Комментарий инспектора
+                  </div>
+                  <textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    rows={3}
+                    placeholder="Обоснование решения (необязательно)"
+                    className="w-full px-2.5 py-2 border border-[#CBD5E1] rounded-md text-[13px] resize-none outline-none focus:border-[#1B4E9B]"
+                  />
+                </div>
+
+                <Button
+                  variant="primary"
+                  size="lg"
+                  icon={<Save size={14} />}
+                  disabled={showReasons && !pendingReason}
+                  onClick={showReasons ? handleRejectSave : handleConfirm}
+                  className="w-full mt-1"
+                >
+                  Сохранить решение
+                </Button>
+
+                <div className="mt-3 pt-3 border-t border-[#E2E8F0] flex items-start gap-2 text-[12px] text-[#475569]">
+                  <FileWarning size={14} className="mt-0.5 shrink-0 text-[#B54708]" aria-hidden />
+                  <div className="flex-1">
+                    Нет нужной стадии?
+                    <button type="button" className="ml-1 text-[#1B4E9B] hover:underline inline-flex items-center gap-1">
+                      <UploadCloud size={11} /> Дозагрузить документ
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {allProcessed && (
+            <div className="p-3 border-t border-[#E2E8F0] bg-[#ECFDF3]">
+              <div className="text-[12px] text-[#027A48] mb-2 flex items-center gap-1.5">
+                <Check size={13} /> Все кандидаты обработаны
+              </div>
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={() => setQueueCompleted(true)}
+                className="w-full"
+              >
+                Перейти к финализации
+              </Button>
+            </div>
+          )}
+        </aside>
       </div>
-      {source && (
-        <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 4 }}>{source}</div>
-      )}
+
+      {/* Строка горячих клавиш */}
+      <div className="h-8 shrink-0 border-t border-[#E2E8F0] bg-white flex items-center justify-center gap-5 text-[11px] text-[#475569]">
+        <span><kbd className="mono px-1.5 py-0.5 border border-[#CBD5E1] rounded bg-[#F8FAFC]">1</kbd> подтвердить</span>
+        <span><kbd className="mono px-1.5 py-0.5 border border-[#CBD5E1] rounded bg-[#F8FAFC]">2</kbd> отклонить</span>
+        <span><kbd className="mono px-1.5 py-0.5 border border-[#CBD5E1] rounded bg-[#F8FAFC]">3</kbd> уточнить</span>
+        <span><kbd className="mono px-1.5 py-0.5 border border-[#CBD5E1] rounded bg-[#F8FAFC]">←</kbd> <kbd className="mono px-1.5 py-0.5 border border-[#CBD5E1] rounded bg-[#F8FAFC]">→</kbd> навигация</span>
+        <span><kbd className="mono px-1.5 py-0.5 border border-[#CBD5E1] rounded bg-[#F8FAFC]">Space</kbd> увеличить</span>
+      </div>
     </div>
   );
 }

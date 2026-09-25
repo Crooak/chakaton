@@ -1,48 +1,29 @@
-import type { DocStage, CompletenessStatus } from '../types';
+import type { DocStage } from '../types';
 
-const STAGE_COLORS: Record<DocStage, { text: string; bg: string; border: string }> = {
-  PD: { text: '#1E40AF', bg: '#EFF6FF', border: '#BFDBFE' },
-  RD: { text: '#166534', bg: '#F0FDF4', border: '#BBF7D0' },
-  ID: { text: '#6B21A8', bg: '#FAF5FF', border: '#E9D5FF' },
+const active: Record<DocStage, { bg: string; text: string; border: string }> = {
+  PD: { bg:'#EFF4FF', text:'#1849A9', border:'#D1E0FF' },
+  RD: { bg:'#F3F4F6', text:'#344054', border:'#E5E7EB' },
+  ID: { bg:'#F9FAFB', text:'#475569', border:'#E5E7EB' }
 };
 
-const COMPLETENESS_OPACITY: Record<CompletenessStatus, number> = {
-  full: 1,
-  partial: 0.6,
-  missing: 0.3,
-};
-
-interface Props {
+export default function StageBadge({
+  stage,
+  active: isActive = true
+}: {
   stage: DocStage;
-  completeness?: CompletenessStatus;
-  size?: 'sm' | 'md';
-}
-
-export default function StageBadge({ stage, completeness = 'full', size = 'sm' }: Props) {
-  const cfg = STAGE_COLORS[stage];
-  const opacity = COMPLETENESS_OPACITY[completeness];
-  const labels: Record<DocStage, string> = { PD: 'ПД', RD: 'РД', ID: 'ИД' };
-  const pad = size === 'md' ? '2px 8px' : '1px 6px';
-  const fs = size === 'md' ? 13 : 11;
-
+  active?: boolean;
+}) {
+  const s = active[stage];
   return (
     <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        color: cfg.text,
-        backgroundColor: cfg.bg,
-        border: `1px solid ${cfg.border}`,
-        padding: pad,
-        borderRadius: 4,
-        fontSize: fs,
-        fontWeight: 600,
-        lineHeight: '16px',
-        opacity,
-        whiteSpace: 'nowrap',
-      }}
+      className="inline-flex items-center justify-center px-1.5 h-5 rounded-[4px] text-[11px] font-medium border"
+      style={
+        isActive
+          ? { background: s.bg, color: s.text, borderColor: s.border }
+          : { background:'#F8FAFC', color:'#94A3B8', borderColor:'#E2E8F0' }
+      }
     >
-      {labels[stage]}
+      {stage}
     </span>
   );
 }

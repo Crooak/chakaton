@@ -1,98 +1,47 @@
-import { type ReactNode, type MouseEvent } from 'react';
+import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
-type Size = 'sm' | 'md' | 'lg';
+type Size = 'md' | 'lg';
 
-interface Props {
-  children: ReactNode;
+interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
-  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
-  disabled?: boolean;
-  fullWidth?: boolean;
-  type?: 'button' | 'submit';
-  title?: string;
+  icon?: ReactNode;
+  children?: ReactNode;
 }
 
-const VARIANT_STYLES: Record<Variant, { bg: string; color: string; border: string; hoverBg: string }> = {
-  primary: {
-    bg: '#1B4E9B',
-    color: '#FFFFFF',
-    border: 'transparent',
-    hoverBg: '#16407F',
-  },
-  secondary: {
-    bg: '#FFFFFF',
-    color: '#0F172A',
-    border: '#E2E8F0',
-    hoverBg: '#F5F7FA',
-  },
-  ghost: {
-    bg: 'transparent',
-    color: '#475569',
-    border: 'transparent',
-    hoverBg: '#F5F7FA',
-  },
-  danger: {
-    bg: '#B42318',
-    color: '#FFFFFF',
-    border: 'transparent',
-    hoverBg: '#9A1E14',
-  },
+const variants: Record<Variant, string> = {
+  primary:   'bg-[#1B4E9B] text-white hover:bg-[#16407F] disabled:bg-[#CBD5E1] disabled:text-white',
+  secondary: 'bg-white text-[#0F172A] border border-[#CBD5E1] hover:bg-[#F5F7FA] disabled:text-[#94A3B8]',
+  ghost:     'bg-transparent text-[#1B4E9B] hover:bg-[#E8F0FB] disabled:text-[#94A3B8]',
+  danger:    'bg-[#B42318] text-white hover:bg-[#912018] disabled:bg-[#CBD5E1]'
 };
 
-const SIZE_STYLES: Record<Size, { height: number; padding: string; fontSize: number }> = {
-  sm: { height: 28, padding: '0 10px', fontSize: 12 },
-  md: { height: 36, padding: '0 14px', fontSize: 13 },
-  lg: { height: 40, padding: '0 18px', fontSize: 14 },
+const sizes: Record<Size, string> = {
+  md: 'h-9 px-4 text-[13px]',
+  lg: 'h-10 px-5 text-[14px]'
 };
 
 export default function Button({
-  children,
-  variant = 'secondary',
+  variant = 'primary',
   size = 'md',
-  onClick,
-  disabled = false,
-  fullWidth = false,
-  type = 'button',
-  title,
+  icon,
+  children,
+  className = '',
+  ...rest
 }: Props) {
-  const v = VARIANT_STYLES[variant];
-  const s = SIZE_STYLES[size];
-
   return (
     <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6,
-        height: s.height,
-        padding: s.padding,
-        fontSize: s.fontSize,
-        fontWeight: 500,
-        fontFamily: 'inherit',
-        color: disabled ? '#94A3B8' : v.color,
-        backgroundColor: disabled ? '#F1F5F9' : v.bg,
-        border: `1px solid ${disabled ? '#E2E8F0' : v.border}`,
-        borderRadius: 8,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        width: fullWidth ? '100%' : 'auto',
-        whiteSpace: 'nowrap',
-        transition: 'background-color 120ms ease, opacity 120ms ease',
-        outline: 'none',
-      }}
-      onMouseEnter={e => {
-        if (!disabled) (e.currentTarget as HTMLButtonElement).style.backgroundColor = v.hoverBg;
-      }}
-      onMouseLeave={e => {
-        if (!disabled) (e.currentTarget as HTMLButtonElement).style.backgroundColor = v.bg;
-      }}
+      {...rest}
+      className={[
+        'inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors',
+        'disabled:cursor-not-allowed',
+        variants[variant],
+        sizes[size],
+        className
+      ].join(' ')}
     >
+      {icon}
       {children}
     </button>
   );
