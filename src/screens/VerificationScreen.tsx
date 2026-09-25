@@ -171,14 +171,27 @@ export default function VerificationScreen({ protocolId, onBack, onFinish }: Pro
   };
 
   const handleClarificationSave = () => {
-    if (selectedRevisionIdx === null) return;
-    saveDecision({
-      kind: 'saved',
-      status: selectedRevisionIdx === 0 ? 'NEGATIVE_VERIFIED' : 'CONFIRMED_VIOLATION',
-      comment, timestamp: nowStr()
-    });
-    window.setTimeout(goNext, 120);
+  if (selectedRevisionIdx === null || !finding.clarificationConflict) return;
+  const chosenRevision = finding.clarificationConflict.revisions[selectedRevisionIdx];
+  
+  // Логика по ТЗ: фиксируем выбранную редакцию как единственный авторитетный источник
+  toast.success(`Редакция ${chosenRevision.revision} утверждена как актуальная база сравнения`);
+  
+  // Сбрасываем статус конфликта, так как инспектор его разрешил камерально
+  finding.actualEvidence = {
+    stage: 'RD',
+    documentCode: chosenRevision.documentCode,
+    sheetPage: chosenRevision.sheetPage,
+    sha256: chosenRevision.sha256,
+    extractedValue: chosenRevision.extractedValue
   };
+  
+  // Возвращаем интерфейс к стандартному сравнению по ТЗ Мосгосстройнадзора
+  setSelectedRevisionIdx(null);
+  // Пересчитываем дельту на ходу
+  finding.actual = chosenRevision.extractedValue; 
+  finding.clarificationConflict = undefined; 
+};
 
   const handleCompositeSave = () => {
     const atoms = Object.entries(selectedAtoms).filter(([, v]) => v).map(([k]) => k);
