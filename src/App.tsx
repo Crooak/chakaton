@@ -1,59 +1,117 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import Sidebar from './components/Sidebar';
+import LoginScreen from './screens/LoginScreen';
 import DashboardScreen from './screens/DashboardScreen';
-import ObjectScreen from './screens/ObjectScreen';
+import UploadScreen from './screens/UploadScreen';
+import ProcessingScreen from './screens/ProcessingScreen';
 import ProtocolScreen from './screens/ProtocolScreen';
 import VerificationScreen from './screens/VerificationScreen';
 import FinalizationScreen from './screens/FinalizationScreen';
+import HypothesesScreen from './screens/HypothesesScreen';
 
-export type Screen = 'dashboard' | 'object' | 'protocol' | 'verification' | 'finalization';
+export type ScreenId =
+  | 'dashboard'
+  | 'upload'
+  | 'processing'
+  | 'protocol'
+  | 'verification'
+  | 'finalization'
+  | 'hypotheses';
 
 export interface NavState {
-  screen: Screen;
-  objectId: string | null;
-  protocolId: string | null;
+  screen: ScreenId;
+  objectId?: string;
+  protocolId?: string;
 }
 
 export default function App() {
-  const [nav, setNav] = useState<NavState>({
-    screen: 'dashboard',
-    objectId: null,
-    protocolId: null,
-  });
+  const [authenticated, setAuthenticated] = useState(false);
+  const [nav, setNav] = useState<NavState>({ screen: 'dashboard' });
 
-  const navigate = (screen: Screen, objectId?: string, protocolId?: string) => {
-    setNav({ screen, objectId: objectId ?? null, protocolId: protocolId ?? null });
-  };
+  const onNavigate = useCallback((next: NavState) => {
+    setNav(next);
+    requestAnimationFrame(() => window.scrollTo(0, 0));
+  }, []);
+
+  if (!authenticated) {
+    return <LoginScreen onLogin={() => setAuthenticated(true)} />;
+  }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        height: '100vh',
-        backgroundColor: '#F5F7FA',
-        overflow: 'hidden',
-        fontFamily: 'Inter, system-ui, sans-serif',
-      }}
-    >
-      <Sidebar activeScreen={nav.screen} onNavigate={s => navigate(s)} />
+    <div className="flex h-screen w-screen overflow-hidden bg-[#F5F7FA]">
+      <Sidebar
+        activeSection={nav.screen}
+        onNavigate={(s) => onNavigate({ screen: s })}
+      />
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+      <main className="flex-1 min-w-0 h-screen overflow-hidden flex flex-col">
         {nav.screen === 'dashboard' && (
-          <DashboardScreen onNavigate={navigate} />
+          <DashboardScreen
+            onOpenObject={(objectId) => onNavigate({ screen: 'upload', objectId })}
+          />
         )}
-        {nav.screen === 'object' && nav.objectId && (
-          <ObjectScreen objectId={nav.objectId} onNavigate={navigate} />
+
+        {nav.screen === 'upload' && (
+          <UploadScreen
+            objectId={nav.objectId ?? 'obj-altuf'}
+            onBack={() => onNavigate({ screen: 'dashboard' })}
+            onRunCheck={(objectId) => onNavigate({ screen: 'processing', objectId })}
+          />
         )}
-        {nav.screen === 'protocol' && nav.protocolId && (
-          <ProtocolScreen protocolId={nav.protocolId} onNavigate={navigate} />
+
+        {nav.screen === 'processing' && (
+          <ProcessingScreen
+            objectId={nav.objectId}
+            onBack={() => onNavigate({ screen: 'upload', objectId: nav.objectId })}
+            onComplete={() =>
+              onNavigate({
+                screen: 'protocol',
+                objectId: nav.objectId,
+                protocolId: 'p-2025-0147'
+              })
+            }
+          />
         )}
-        {nav.screen === 'verification' && nav.protocolId && (
-          <VerificationScreen protocolId={nav.protocolId} onNavigate={navigate} />
+
+        {nav.screen === 'protocol' && (
+          <ProtocolScreen
+            protocolId={nav.protocolId ?? 'p-2025-0147'}
+            onBack={() => onNavigate({ screen: 'upload', objectId: nav.objectId })}
+            onOpenVerification={(protocolId) =>
+              onNavigate({ screen: 'verification', protocolId, objectId: nav.objectId })
+            }
+            onOpenHypotheses={(protocolId) =>
+              onNavigate({ screen: 'hypotheses', protocolId, objectId: nav.objectId })
+            }
+          />
         )}
-        {nav.screen === 'finalization' && nav.protocolId && (
-          <FinalizationScreen protocolId={nav.protocolId} onNavigate={navigate} />
+
+        {nav.screen === 'verification' && (
+          <VerificationScreen
+            protocolId={nav.protocolId ?? 'p-2025-0147'}
+            onBack={() => onNavigate({ screen: 'protocol', protocolId: nav.protocolId })}
+            onFinish={(protocolId) =>
+              onNavigate({ screen: 'finalization', protocolId, objectId: nav.objectId })
+            }
+          />
         )}
-      </div>
+
+        {nav.screen === 'finalization' && (
+          <FinalizationScreen
+            protocolId={nav.protocolId ?? 'p-2025-0147'}
+            onBack={() => onNavigate({ screen: 'verification', protocolId: nav.protocolId })}
+          />
+        )}
+
+        {nav.screen === 'hypotheses' && (
+          <HypothesesScreen
+            onBack={() => onNavigate({ screen: 'protocol', protocolId: nav.protocolId })}
+            onPromote={() =>
+              onNavigate({ screen: 'verification', protocolId: nav.protocolId, objectId: nav.objectId })
+            }
+          />
+        )}
+      </main>
     </div>
   );
 }

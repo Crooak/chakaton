@@ -1,312 +1,275 @@
-import { useState } from 'react';
-import { ChevronRight, Download, ChevronDown, ArrowUpDown } from 'lucide-react';
-import type { FindingStatus, ReviewPriority } from '../types';
-import { MOCK_OBJECTS, MOCK_PROTOCOL } from '../mocks/data';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, Download, CheckCircle2 } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
-import PriorityBadge from '../components/PriorityBadge';
+import PriorityIndicator from '../components/PriorityIndicator';
 import StageBadge from '../components/StageBadge';
 import Button from '../components/Button';
-import type { NavState } from '../App';
-import type { Finding } from '../types';
+import EmptyState from '../components/EmptyState';
+import { SkeletonTable } from '../components/Skeleton';
+import { protocol, processStatusLabels } from '../mocks/data';
+import type { FindingStatus, ReviewPriority } from '../types';
 
 interface Props {
   protocolId: string;
-  onNavigate: (screen: NavState['screen'], objectId?: string, protocolId?: string) => void;
+  onBack: () => void;
+  onOpenVerification: (protocolId: string) => void;
+  onOpenHypotheses: (protocolId: string) => void;
 }
 
-type TabKey = 'completeness' | 'candidates' | 'confirmed' | 'verified' | 'suspicions';
+type TabKey = 'completeness' | 'candidates' | 'confirmed' | 'verified' | 'hypotheses';
 
-const TAB_STATUSES: Record<TabKey, FindingStatus[]> = {
-  completeness: ['MISSING_EVIDENCE', 'NOT_APPLICABLE', 'NOT_COMPARABLE', 'CLARIFICATION_REQUIRED'],
-  candidates: ['CANDIDATE'],
-  confirmed: ['CONFIRMED_VIOLATION'],
-  verified: ['NEGATIVE_VERIFIED'],
-  suspicions: ['SUSPICION'],
-};
+interface TabDef {
+  key: TabKey;
+  label: string;
+  statuses: FindingStatus[];
+}
 
-export default function ProtocolScreen({ protocolId, onNavigate }: Props) {
-  const protocol = MOCK_PROTOCOL;
-  const obj = MOCK_OBJECTS.find(o => o.id === protocol.objectId) ?? MOCK_OBJECTS[0];
+const TABS: TabDef[] = [
+  { key: 'completeness', label: 'Комплектность и сопоставимость',
+    statuses: ['MISSING_EVIDENCE', 'NOT_APPLICABLE', 'NOT_COMPARABLE', 'CLARIFICATION_REQUIRED'] },
+  { key: 'candidates',  label: 'Кандидаты',
+    statuses: ['CANDIDATE'] },
+  { key: 'confirmed',   label: 'Подтверждённые нарушения',
+    statuses: ['CONFIRMED_VIOLATION'] },
+  { key: 'verified',    label: 'Проверено, расхождений нет',
+    statuses: ['NEGATIVE_VERIFIED'] },
+  { key: 'hypotheses',  label: 'Гипотезы свободного поиска',
+    statuses: ['SUSPICION'] }
+];
+
+export default function ProtocolScreen({
+  protocolId, onBack, onOpenVerification, onOpenHypotheses
+}: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>('candidates');
-  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [priorityFilter, setPriorityFilter] = useState<'ALL' | ReviewPriority>('ALL');
 
-  const tabFindings = (tab: TabKey) =>
-    protocol.findings.filter(f => TAB_STATUSES[tab].includes(f.status));
+  useEffect(() => {
+    const t = window.setTimeout(() => setLoading(false), 500);
+    return () => window.clearTimeout(t);
+  }, []);
 
-  const tabs: { key: TabKey; label: string }[] = [
-    { key: 'completeness', label: `Комплектность и сопоставимость (${tabFindings('completeness').length})` },
-    { key: 'candidates', label: `Кандидаты (${tabFindings('candidates').length})` },
-    { key: 'confirmed', label: `Подтверждённые нарушения (${tabFindings('confirmed').length})` },
-    { key: 'verified', label: `Проверено, расхождений нет (${tabFindings('verified').length})` },
-    { key: 'suspicions', label: `Гипотезы свободного поиска (${tabFindings('suspicions').length})` },
-  ];
+  const counts = useMemo<Record<TabKey, number>>(() => ({
+    completeness: 19, candidates: 14, confirmed: 3, verified: 96, hypotheses: 5
+  }), []);
 
-  const visibleFindings = tabFindings(activeTab);
-  const candidateCount = tabFindings('candidates').length;
-  const canFinalize = candidateCount === 0;
+  const rows = useMemo(() => {
+    const tab = TABS.find((t) => t.key === activeTab)!;
+    let list = protocol.findings.filter((f) => tab.statuses.includes(f.status));
+    if (priorityFilter !== 'ALL') {
+      list = list.filter((f) => f.priority === priorityFilter);
+    }
+    return list;
+  }, [activeTab, priorityFilter]);
+
+  const candidatesCount = protocol.findings.filter((f) => f.status === 'CANDIDATE').length;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Topbar */}
-      <div
-        style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '0 24px', height: 48,
-          backgroundColor: '#FFFFFF', borderBottom: '1px solid #E2E8F0', flexShrink: 0,
-        }}
-      >
-        <button
-          onClick={() => onNavigate('dashboard')}
-          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#1B4E9B', fontSize: 13, fontFamily: 'inherit', padding: 0 }}
-        >Объекты</button>
-        <ChevronRight size={14} color="#94A3B8" />
-        <button
-          onClick={() => onNavigate('object', obj.id)}
-          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#1B4E9B', fontSize: 13, fontFamily: 'inherit', padding: 0 }}
-        >{obj.name}</button>
-        <ChevronRight size={14} color="#94A3B8" />
-        <span style={{ fontSize: 13, color: '#0F172A', fontWeight: 500 }}>
-          Протокол № {protocol.number}
-        </span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #E2E8F0',
-              backgroundColor: '#FFFFFF', color: '#475569', borderRadius: 8, padding: '0 12px',
-              height: 36, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            <Download size={14} />
-            Экспорт
-            <ChevronDown size={12} />
-          </button>
-          <Button
-            variant="primary"
-            size="md"
-            disabled={!canFinalize}
-            title={!canFinalize ? `Остались необработанные кандидаты (${candidateCount})` : ''}
-            onClick={() => onNavigate('finalization', obj.id, protocolId)}
-          >
-            Завершить верификацию
-          </Button>
-        </div>
-      </div>
-
-      {/* Protocol header */}
-      <div style={{ backgroundColor: '#FFFFFF', borderBottom: '1px solid #E2E8F0', padding: '12px 24px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              <h1 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#0F172A' }}>
-                Протокол проверки № {protocol.number}
-              </h1>
-              <span
-                style={{
-                  backgroundColor: '#FFFAEB', color: '#B54708',
-                  padding: '1px 8px', borderRadius: 4, fontSize: 12, fontWeight: 500,
-                }}
-              >
-                Готов к верификации
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 16 }}>
-              <span style={{ fontSize: 12, color: '#94A3B8' }}>
-                {obj.name} · {obj.address}
-              </span>
-              <span style={{ fontSize: 12, color: '#94A3B8' }}>
-                Сформирован: {protocol.createdAt}
-              </span>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
-            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#94A3B8', display: 'flex', flexDirection: 'column', gap: 1, textAlign: 'right' }}>
-              <span>matrix_version {protocol.matrixVersion}</span>
-              <span>model_version {protocol.modelVersion}</span>
-              <span>hash {protocol.inputHash}</span>
-            </span>
-          </div>
-        </div>
-
-        {/* Summary bar */}
-        <div
-          style={{
-            display: 'flex', gap: 6, marginTop: 10, padding: '7px 12px',
-            backgroundColor: '#EDF1F7', borderRadius: 6, fontSize: 12, color: '#475569',
-            flexWrap: 'wrap',
-          }}
-        >
-          <span><strong style={{ color: '#0F172A' }}>{protocol.totalParameters}</strong> параметров проверено</span>
-          <Dot />
-          <span><strong style={{ color: '#B54708' }}>{protocol.candidatesCount}</strong> кандидатов</span>
-          <Dot />
-          <span><strong style={{ color: '#B42318' }}>{protocol.confirmedCount}</strong> подтверждено</span>
-          <Dot />
-          <span><strong style={{ color: '#027A48' }}>{protocol.negativeVerifiedCount}</strong> расхождений не выявлено</span>
-          <Dot />
-          <span><strong style={{ color: '#475569' }}>{protocol.missingEvidenceCount}</strong> без доказательств</span>
-          <Dot />
-          <span><strong style={{ color: '#475569' }}>{protocol.notApplicableCount}</strong> неприменимо</span>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div style={{ backgroundColor: '#FFFFFF', borderBottom: '1px solid #E2E8F0', padding: '0 24px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', gap: 0, overflowX: 'auto' }}>
-          {tabs.map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              style={{
-                padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer',
-                fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
-                color: activeTab === tab.key ? '#1B4E9B' : '#475569',
-                borderBottom: `2px solid ${activeTab === tab.key ? '#1B4E9B' : 'transparent'}`,
-                whiteSpace: 'nowrap',
-              }}
+    <div className="h-full flex flex-col overflow-hidden bg-[#F5F7FA]">
+      <PageHeader
+        crumbs={['Объекты', 'Торговое здание, Алтуфьевское ш., 79Б', `Протокол № ${protocol.number}`]}
+        title={`Протокол проверки № ${protocol.number}`}
+        actions={
+          <>
+            <Button variant="ghost" icon={<ArrowLeft size={14} />} onClick={onBack}>
+              Назад
+            </Button>
+            <Button variant="secondary" icon={<Download size={14} />}>Экспорт</Button>
+            <Button
+              variant="primary"
+              disabled={candidatesCount > 0}
+              title={candidatesCount > 0
+                ? `Остались необработанные кандидаты: ${candidatesCount}`
+                : 'Завершить верификацию'}
+              onClick={() => onOpenVerification(protocolId)}
             >
-              {tab.label}
-            </button>
-          ))}
+              Завершить верификацию
+            </Button>
+          </>
+        }
+      />
+
+      <div className="flex-1 overflow-auto px-8 py-5">
+        {/* Технические версии */}
+        <div className="mono text-[11px] text-[#94A3B8] mb-3">
+          matrix_version {protocol.matrixVersion} · model_version {protocol.modelVersion} ·
+          dataset_version {protocol.datasetVersion} · hash {protocol.hash.slice(0, 12)}…
         </div>
-      </div>
 
-      {/* Table */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
-        <div style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, overflow: 'hidden' }}>
-          {/* Table header */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '90px 60px 180px 140px 140px 80px 90px 70px 130px 110px',
-              backgroundColor: '#EDF1F7', borderBottom: '1px solid #E2E8F0',
-            }}
-          >
-            {['Код', 'Раздел', 'Наименование параметра', 'Ожидается', 'Фактически', 'Δ', 'Источники', 'Приоритет', 'Статус', ''].map((h, i) => (
-              <div
-                key={i}
-                style={{
-                  padding: '7px 10px', fontSize: 11, fontWeight: 600, color: '#475569',
-                  textTransform: 'uppercase', letterSpacing: 0.4,
-                  display: 'flex', alignItems: 'center', gap: 3,
-                }}
-              >
-                {h}
-                {['Ожидается', 'Фактически', 'Δ'].includes(h) && <ArrowUpDown size={10} />}
-              </div>
-            ))}
-          </div>
-
-          {visibleFindings.length === 0 && (
-            <div style={{ padding: 32, textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
-              Записей нет
+        {/* Шапка протокола */}
+        <div className="grid grid-cols-12 gap-3 mb-4">
+          <div className="col-span-8 bg-white border border-[#E2E8F0] rounded-lg px-4 py-3">
+            <div className="text-[11px] text-[#94A3B8] uppercase tracking-wide mb-1">Статус процесса</div>
+            <div className="flex items-center gap-3">
+              <span className="inline-flex items-center gap-1.5 text-[13px] text-[#027A48]">
+                <CheckCircle2 size={14} aria-hidden />
+                {processStatusLabels[protocol.processStatus]}
+              </span>
+              <span className="text-[12px] text-[#475569]">
+                Создан: <span className="mono text-[#0F172A]">{protocol.createdAt}</span>
+              </span>
+              <span className="text-[12px] text-[#475569]">
+                Версия: <span className="mono text-[#0F172A]">{protocol.version}</span>
+              </span>
             </div>
-          )}
-
-          {visibleFindings.map(finding => (
-            <FindingRow
-              key={finding.id}
-              finding={finding}
-              hovered={hoveredRow === finding.id}
-              onHover={() => setHoveredRow(finding.id)}
-              onLeave={() => setHoveredRow(null)}
-              onVerify={() => onNavigate('verification', obj.id, protocolId)}
-              showVerifyButton={activeTab === 'candidates'}
-              showAttachButton={activeTab === 'suspicions'}
-            />
-          ))}
+          </div>
+          <div className="col-span-4 bg-white border border-[#E2E8F0] rounded-lg px-4 py-3">
+            <div className="text-[11px] text-[#94A3B8] uppercase tracking-wide mb-1">Тип проверки</div>
+            <div className="text-[13px] text-[#0F172A] font-medium">ПД + РД</div>
+            <div className="flex items-center gap-2 mt-1.5">
+              <StageBadge stage="PD" /><StageBadge stage="RD" /><StageBadge stage="ID" active={false} />
+            </div>
+          </div>
         </div>
+
+        {/* Полоса сводки */}
+        <div className="bg-[#EDF1F7] border border-[#E2E8F0] rounded-lg px-4 py-2.5 mb-4 text-[12px] text-[#475569] flex items-center gap-3 flex-wrap">
+          <span><span className="num text-[#0F172A] font-medium">{protocol.summary.checked}</span> параметров проверено</span>
+          <span className="text-[#CBD5E1]">·</span>
+          <span><span className="num text-[#0F172A] font-medium">{protocol.summary.candidates}</span> кандидатов</span>
+          <span className="text-[#CBD5E1]">·</span>
+          <span><span className="num text-[#0F172A] font-medium">{protocol.summary.confirmed}</span> подтверждено</span>
+          <span className="text-[#CBD5E1]">·</span>
+          <span><span className="num text-[#0F172A] font-medium">{protocol.summary.negative}</span> расхождений не выявлено</span>
+          <span className="text-[#CBD5E1]">·</span>
+          <span><span className="num text-[#0F172A] font-medium">{protocol.summary.noEvidence}</span> без доказательств</span>
+          <span className="text-[#CBD5E1]">·</span>
+          <span><span className="num text-[#0F172A] font-medium">{protocol.summary.notApplicable}</span> неприменимо</span>
+        </div>
+
+        {/* Вкладки */}
+        <div className="border-b border-[#E2E8F0] flex items-center gap-1 mb-3">
+          {TABS.map((t) => {
+            const isActive = t.key === activeTab;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => { setActiveTab(t.key); setPriorityFilter('ALL'); }}
+                className={[
+                  'px-3 h-9 text-[13px] rounded-t-md transition-colors flex items-center gap-2',
+                  isActive
+                    ? 'text-[#1B4E9B] border-b-2 border-[#1B4E9B] bg-white'
+                    : 'text-[#475569] hover:text-[#0F172A]'
+                ].join(' ')}
+              >
+                <span>{t.label}</span>
+                <span className={[
+                  'num text-[11px] px-1.5 rounded-[4px]',
+                  isActive ? 'bg-[#E8F0FB] text-[#1B4E9B]' : 'bg-[#EDF1F7] text-[#475569]'
+                ].join(' ')}>
+                  {counts[t.key]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Фильтры над таблицей */}
+        <div className="flex items-center gap-3 mb-3">
+          <select
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value as 'ALL' | ReviewPriority)}
+            className="h-9 px-3 border border-[#CBD5E1] rounded-md bg-white text-[13px] text-[#475569] outline-none focus:border-[#1B4E9B]"
+          >
+            <option value="ALL">Приоритет: все</option>
+            <option value="HIGH">HIGH</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="LOW">LOW</option>
+          </select>
+          {priorityFilter !== 'ALL' && (
+            <button
+              type="button"
+              onClick={() => setPriorityFilter('ALL')}
+              className="text-[12px] text-[#1B4E9B] hover:underline"
+            >
+              Сбросить фильтр
+            </button>
+          )}
+        </div>
+
+        {/* Плашка вкладки гипотез */}
+        {activeTab === 'hypotheses' && !loading && rows.length > 0 && (
+          <div className="mb-3 flex items-center justify-between bg-[#EDF1F7] border border-[#E2E8F0] rounded-lg px-4 py-2.5">
+            <span className="text-[13px] text-[#475569]">
+              Гипотезы не входят в число нарушений и не используются для обучения модели.
+            </span>
+            <Button variant="primary" onClick={() => onOpenHypotheses(protocolId)}>
+              Открыть полный список
+            </Button>
+          </div>
+        )}
+
+        {/* Таблица / скелетон / пустое состояние */}
+        {loading ? (
+          <SkeletonTable rows={8} />
+        ) : rows.length === 0 ? (
+          <div className="bg-white border border-[#E2E8F0] rounded-lg">
+            <EmptyState
+              kind={priorityFilter !== 'ALL' ? 'no-filter-results' : 'no-candidates'}
+              action={
+                priorityFilter !== 'ALL' ? (
+                  <Button variant="secondary" onClick={() => setPriorityFilter('ALL')}>
+                    Сбросить фильтр
+                  </Button>
+                ) : undefined
+              }
+            />
+          </div>
+        ) : (
+          <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden">
+            <table className="w-full text-[13px] border-collapse">
+              <thead>
+                <tr className="bg-[#EDF1F7] text-[#475569] text-[12px]">
+                  <th className="text-left font-medium px-3 h-10 w-[80px]">Код</th>
+                  <th className="text-left font-medium px-3 h-10 w-[60px]">Раздел</th>
+                  <th className="text-left font-medium px-3 h-10">Наименование параметра</th>
+                  <th className="text-right font-medium px-3 h-10 w-[120px]">Ожидается</th>
+                  <th className="text-right font-medium px-3 h-10 w-[120px]">Фактически</th>
+                  <th className="text-right font-medium px-3 h-10 w-[100px]">Δ</th>
+                  <th className="text-left font-medium px-3 h-10 w-[110px]">Источники</th>
+                  <th className="text-left font-medium px-3 h-10 w-[110px]">Приоритет</th>
+                  <th className="text-left font-medium px-3 h-10 w-[180px]">Статус</th>
+                  <th className="text-right font-medium px-3 h-10 w-[110px]" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((f) => (
+                  <tr key={f.id} className="h-10 border-t border-[#E2E8F0] hover:bg-[#E8F0FB]">
+                    <td className="px-3 mono text-[#0F172A]">{f.code}</td>
+                    <td className="px-3 text-[#475569]">{f.section}</td>
+                    <td className="px-3 text-[#0F172A] truncate">{f.title}</td>
+                    <td className="px-3 text-right num text-[#0F172A]">{f.expected}</td>
+                    <td className="px-3 text-right num text-[#0F172A]">{f.actual}</td>
+                    <td className="px-3 text-right num text-[#475569]">{f.delta}</td>
+                    <td className="px-3">
+                      <div className="flex items-center gap-1">
+                        <StageBadge stage="PD" active={f.sources.includes('PD')} />
+                        <StageBadge stage="RD" active={f.sources.includes('RD')} />
+                        <StageBadge stage="ID" active={f.sources.includes('ID')} />
+                      </div>
+                    </td>
+                    <td className="px-3"><PriorityIndicator priority={f.priority} /></td>
+                    <td className="px-3"><StatusBadge status={f.status} /></td>
+                    <td className="px-3 text-right">
+                      {f.status === 'CANDIDATE' ? (
+                        <Button variant="primary" onClick={() => onOpenVerification(protocolId)}>
+                          Проверить
+                        </Button>
+                      ) : f.status === 'SUSPICION' ? (
+                        <Button variant="secondary" onClick={() => onOpenHypotheses(protocolId)}>
+                          Привязать
+                        </Button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
-}
-
-function FindingRow({
-  finding, hovered, onHover, onLeave, onVerify, showVerifyButton, showAttachButton,
-}: {
-  finding: Finding;
-  hovered: boolean;
-  onHover: () => void;
-  onLeave: () => void;
-  onVerify: () => void;
-  showVerifyButton: boolean;
-  showAttachButton: boolean;
-}) {
-  return (
-    <div
-      onMouseEnter={onHover}
-      onMouseLeave={onLeave}
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '90px 60px 180px 140px 140px 80px 90px 70px 130px 110px',
-        borderBottom: '1px solid #E2E8F0',
-        backgroundColor: hovered ? '#F8FAFC' : '#FFFFFF',
-        transition: 'background-color 80ms ease',
-        height: 40,
-        alignItems: 'center',
-      }}
-    >
-      <div style={{ padding: '0 10px' }}>
-        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#0F172A', fontWeight: 500 }}>
-          {finding.code}
-        </span>
-      </div>
-      <div style={{ padding: '0 10px', fontSize: 12, color: '#475569' }}>{finding.section}</div>
-      <div style={{ padding: '0 10px', fontSize: 12, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {finding.parameterName}
-      </div>
-      <div style={{ padding: '0 10px', fontSize: 12, color: '#0F172A', fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {finding.expected}
-      </div>
-      <div style={{ padding: '0 10px', fontSize: 12, color: '#0F172A', fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {finding.actual}
-      </div>
-      <div
-        style={{
-          padding: '0 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums', fontWeight: 500,
-          color: finding.delta.startsWith('+') ? '#B42318' : finding.delta.startsWith('−') ? '#B42318' : '#475569',
-        }}
-      >
-        {finding.delta}
-      </div>
-      <div style={{ padding: '0 10px', display: 'flex', gap: 2 }}>
-        {finding.sources.map(s => <StageBadge key={s} stage={s} />)}
-      </div>
-      <div style={{ padding: '0 10px' }}>
-        <PriorityBadge priority={finding.priority} showLabel={false} />
-      </div>
-      <div style={{ padding: '0 10px' }}>
-        <StatusBadge status={finding.status} compact />
-      </div>
-      <div style={{ padding: '0 8px', display: 'flex', justifyContent: 'flex-end' }}>
-        {showVerifyButton && (
-          <button
-            onClick={onVerify}
-            style={{
-              height: 28, padding: '0 10px', fontSize: 12, fontWeight: 500,
-              backgroundColor: '#E8F0FB', color: '#1B4E9B',
-              border: '1px solid #C7D7F4', borderRadius: 6,
-              cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-            }}
-          >
-            Проверить
-          </button>
-        )}
-        {showAttachButton && (
-          <button
-            style={{
-              height: 28, padding: '0 10px', fontSize: 12, fontWeight: 500,
-              backgroundColor: '#F0F9FF', color: '#026AA2',
-              border: '1px solid #BAE6FD', borderRadius: 6,
-              cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-            }}
-          >
-            Привязать
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Dot() {
-  return <span style={{ color: '#CBD5E1' }}>·</span>;
 }

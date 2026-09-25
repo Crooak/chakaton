@@ -1,56 +1,29 @@
 import type { FindingStatus } from '../types';
+import { statusLabels } from '../mocks/data';
 
-interface StatusConfig {
-  text: string;
-  color: string;
-  bg: string;
-}
-
-const STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
-  CANDIDATE: { text: 'Кандидат', color: '#B54708', bg: '#FFFAEB' },
-  CONFIRMED_VIOLATION: { text: 'Нарушение подтверждено', color: '#B42318', bg: '#FEF3F2' },
-  NEGATIVE_VERIFIED: { text: 'Расхождений нет', color: '#027A48', bg: '#ECFDF3' },
-  MISSING_EVIDENCE: { text: 'Нет доказательства', color: '#475569', bg: '#F1F5F9' },
-  NOT_APPLICABLE: { text: 'Неприменимо', color: '#64748B', bg: '#F8FAFC' },
-  NOT_COMPARABLE: { text: 'Нельзя сопоставить', color: '#475569', bg: '#F1F5F9' },
-  CLARIFICATION_REQUIRED: { text: 'Требует уточнения', color: '#5925DC', bg: '#F4F3FF' },
-  SUSPICION: { text: 'Гипотеза', color: '#026AA2', bg: '#F0F9FF' },
+const styles: Record<FindingStatus, { text: string; bg: string; dot: string; dashed?: boolean }> = {
+  CANDIDATE:              { text:'#B54708', bg:'#FFFAEB', dot:'#B54708' },
+  CONFIRMED_VIOLATION:    { text:'#B42318', bg:'#FEF3F2', dot:'#B42318' },
+  NEGATIVE_VERIFIED:      { text:'#027A48', bg:'#ECFDF3', dot:'#027A48' },
+  CLARIFICATION_REQUIRED: { text:'#5925DC', bg:'#F4F3FF', dot:'#5925DC' },
+  MISSING_EVIDENCE:       { text:'#475569', bg:'#F1F5F9', dot:'#475569', dashed:true },
+  NOT_APPLICABLE:         { text:'#64748B', bg:'#F8FAFC', dot:'#64748B' },
+  NOT_COMPARABLE:         { text:'#475569', bg:'#F1F5F9', dot:'#475569' },
+  SUSPICION:              { text:'#026AA2', bg:'#F0F9FF', dot:'#026AA2' }
 };
 
-interface Props {
-  status: FindingStatus;
-  compact?: boolean;
-}
-
-export default function StatusBadge({ status, compact = false }: Props) {
-  const cfg = STATUS_CONFIG[status];
+export default function StatusBadge({ status }: { status: FindingStatus }) {
+  const s = styles[status];
   return (
     <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
-        backgroundColor: cfg.bg,
-        color: cfg.color,
-        padding: compact ? '0 6px' : '1px 8px',
-        borderRadius: 4,
-        fontSize: 12,
-        fontWeight: 500,
-        lineHeight: '16px',
-        whiteSpace: 'nowrap',
-      }}
+      className={[
+        'inline-flex items-center gap-1.5 px-2 h-6 rounded-[4px] text-[12px] font-medium whitespace-nowrap',
+        s.dashed ? 'border border-dashed border-[#CBD5E1]' : ''
+      ].join(' ')}
+      style={{ background: s.bg, color: s.text }}
     >
-      <span
-        style={{
-          display: 'inline-block',
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          backgroundColor: cfg.color,
-          flexShrink: 0,
-        }}
-      />
-      {cfg.text}
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.dot }} aria-hidden />
+      {statusLabels[status]}
     </span>
   );
 }
